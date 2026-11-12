@@ -1,0 +1,18 @@
+XamlAnimatedPng UWP integration for LumINE
+
+Upstream: https://github.com/xupefei/XamlAnimatedPng
+Commit: 227e62d72bad3b689f9c7250f2f1c47250c36461
+Upstream fork origin: https://github.com/XamlAnimatedGif/XamlAnimatedGif
+License: Apache License 2.0; see LICENSE.txt in this directory.
+
+TimingManager.cs is vendored from XamlAnimatedGif.Shared/TimingManager.cs.
+Modifications: select the WINRT branch for UWP; clamp the final frame wait to
+the requested animation duration.
+
+ApngAnimator.Uwp.cs is a LumINE integration adapter based on the upstream
+Animator.RunAsync scheduling and WINRT CopyToBitmap buffer-copy rendering.
+The upstream repository labels APNG support as WIP and the pinned source
+still uses GifDataStream/LZW. LumINE therefore supplies its existing APNG
+decoder, compositor and bounded prepared-frame cache to this adapter.
+
+This integration does not claim that unmodified upstream can decode APNG.

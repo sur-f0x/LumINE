@@ -1,0 +1,23 @@
+<Page x:Class="LumINE.Views.AttributionsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="White">
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="56"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid Background="#3F4663">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="48"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Button Content="&#xE72B;" FontFamily="Segoe MDL2 Assets" Foreground="White" Background="Transparent" Click="Back_Click"/>
+            <TextBlock Grid.Column="1" Text="謝辞・ライセンス" Foreground="White" FontSize="20" VerticalAlignment="Center"/>
+        </Grid>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16" MaxWidth="760" HorizontalAlignment="Stretch">
+                <TextBlock Text="LumINE 1.0" FontSize="24" Foreground="#3F4663" Margin="0,0,0,12"/>
+                <TextBlock Text="LumINE は Vyline の設計・実装を出発点として制作しました。Vyline Team、nezumi0627 氏、貢献者の皆さまに敬意と感謝を表します。" TextWrapping="Wrap" Foreground="#303030"/>
+                <HyperlinkButton Content="Vyline — 移植元プロジェクト" NavigateUri="https://github.com/nezumi0627/vyline" HorizontalAlignment="Left"/>
+                <HyperlinkButton Content="linejs — E2EE・画像転送の参考実装" NavigateUri="https://github.com/evex-dev/linejs" HorizontalAlignment="Left"/>
+                <HyperlinkButton Content="XamlAnimatedPng — スタンプ再生" NavigateUri="https://github.com/xupefei/XamlAnimatedPng" HorizontalAlignment="Left"/>
+                <TextBlock Text="ライセンス・権利表示の原文" FontSize="18" Foreground="#3F4663" Margin="0,16,0,8"/>
+                <TextBlock x:Name="LicenseText" Text="読み込み中…" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontSize="12" Foreground="#303030"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

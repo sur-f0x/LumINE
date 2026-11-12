@@ -1,0 +1,90 @@
+<Page
+    x:Class="LumINE.Views.ChatListPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:LumINE.Views"
+    xmlns:vm="using:LumINE.ViewModels"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    RequestedTheme="Light"
+    Background="White">
+
+    <Page.Resources>
+        <vm:BoolVisibilityConverter x:Key="BoolVisibilityConverter"/>
+<DataTemplate x:Key="ChatRowTemplate">
+                        <Grid Padding="12,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="60"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0" Width="52" Height="52">
+                            <Ellipse Fill="#E0E0E0"/>
+                            <Ellipse>
+                                <Ellipse.Fill>
+                                    <ImageBrush ImageSource="{Binding Avatar}" Stretch="UniformToFill"/>
+                                </Ellipse.Fill>
+                            </Ellipse>
+                        </Grid>
+                        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}" FontSize="17" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding LastMessagePreview}" FontSize="14" Foreground="#9297A2" TextTrimming="CharacterEllipsis" MaxLines="1" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" VerticalAlignment="Top" HorizontalAlignment="Right" MinWidth="34">
+                            <TextBlock Text="{Binding LastMessageTimeLabel}" FontSize="11" Foreground="#B8BDC7" HorizontalAlignment="Right"/>
+                            <Border Background="#06C755" CornerRadius="12" MinWidth="22" Height="22" Padding="6,0" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,7,0,0"
+                                    Visibility="{Binding HasUnread, Converter={StaticResource BoolVisibilityConverter}}">
+                                <TextBlock Text="{Binding UnreadBadge}" Foreground="White" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+
+    </Page.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Background="#3F4663">
+            <Grid Height="36">
+                <TextBlock x:Name="PageTitleText" Text="友だち" Foreground="White" FontSize="18" VerticalAlignment="Center" Margin="12,0"/>
+            </Grid>
+            <Grid Height="48">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Button x:Name="FriendsTabButton" Grid.Column="0" Click="FriendsTab_Click" Background="Transparent" Foreground="White" BorderThickness="0" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="友だち" ToolTipService.ToolTip="友だち"><TextBlock x:Name="FriendsTabIcon" Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="30"/></Button>
+                <Button x:Name="GroupsTabButton" Grid.Column="1" Click="GroupsTab_Click" Background="Transparent" Foreground="#8590A8" BorderThickness="0" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="グループ" ToolTipService.ToolTip="グループ"><TextBlock x:Name="GroupsTabIcon" Text="&#xE902;" FontFamily="Segoe MDL2 Assets" FontSize="30"/></Button>
+            </Grid>
+            <StackPanel x:Name="SearchPanel" Visibility="Collapsed" Margin="12,4,12,8">
+                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
+                    <TextBox x:Name="SearchInput" PlaceholderText="名前で検索" TextChanged="SearchInput_TextChanged" Background="White" Foreground="#222222"/>
+                    <Button Grid.Column="1" Content="×" Click="CloseSearch_Click" Background="Transparent" Foreground="White" BorderThickness="0" AutomationProperties.Name="検索を閉じる"/>
+                </Grid>
+                <TextBlock Text="{Binding SearchSummary}" Foreground="#D7DCE8" FontSize="12" Margin="0,4,0,0"/>
+            </StackPanel>
+        </StackPanel>
+        <Grid Grid.Row="1" Background="White">
+
+        <FlipView x:Name="ChatsFlip" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+            <FlipViewItem HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                <ListView x:Name="FriendsList" ItemsSource="{Binding FriendChats}" ItemTemplate="{StaticResource ChatRowTemplate}" Background="White" Foreground="#222222" IsItemClickEnabled="True" ItemClick="ChatList_ItemClick" IsSwipeEnabled="False"/>
+            </FlipViewItem>
+            <FlipViewItem HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                <ListView x:Name="GroupsList" ItemsSource="{Binding GroupChats}" ItemTemplate="{StaticResource ChatRowTemplate}" Background="White" Foreground="#222222" IsItemClickEnabled="True" ItemClick="ChatList_ItemClick" IsSwipeEnabled="False"/>
+            </FlipViewItem>
+        </FlipView>
+        <TextBlock Text="{Binding StatusMessage}" Foreground="#B00020" TextWrapping="Wrap" Margin="12,6" VerticalAlignment="Top" IsHitTestVisible="False"/>
+        </Grid>
+        <ProgressBar Grid.Row="2" Height="3" MinHeight="3" Margin="0" Foreground="#06C755" Background="Transparent"
+                     IsIndeterminate="{Binding IsBusy}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibilityConverter}}" AutomationProperties.Name="処理中"/>
+        <CommandBar Grid.Row="3" Background="#F1F2F6" Foreground="#9CA3AF" ClosedDisplayMode="Compact" IsOpen="False" IsDynamicOverflowEnabled="False">
+            <AppBarButton Icon="Find" Label="検索" Click="SearchButton_Click"/>
+            <AppBarButton Icon="Add" Label="新しいトーク" Click="AddButton_Click"/>
+            <CommandBar.SecondaryCommands><AppBarButton Label="設定" Click="MoreButton_Click"/></CommandBar.SecondaryCommands>
+        </CommandBar>
+    </Grid>
+</Page>
