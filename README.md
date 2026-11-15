@@ -4,8 +4,6 @@ Windows 10 Mobile に 2026 年に動作する LINE アプリを実装する非�
 Vyline と LINE-Chrome-Android-App を参考に、 Codex と一緒に作成しました！
 
 
-Windows 10 Mobile 1703 (Build 15063) 向け非公式LINEクライアント「LumINE」
-
 ![icon](LumINE/Assets/StoreLogo.scale-200.png)
 
 
@@ -14,8 +12,11 @@ Windows 10 Mobile 1703 (Build 15063) 向け非公式LINEクライアント「Lum
 
 **非公式クライアントのため、不具合・アカウント BAN 等このアプリを使用した結果生じたいかなる損害について一切責任を負いかねます。**
 
-
+## テスト済みの端末
+- Microsoft Lumia 950 (Snapdragon 808/3GB RAM/Windows 10 Mobile 1709)
+- Lenovo 503LV (Snapdragon 617/3GB RAM/Windows 10 Mobile 1709)
 ## インストール
+※ Windows 10 Mobile 1703/1709 へのアップグレードが必要です。
 1. Releases から APPX パッケージをダウンロード
 2. 開発者モードを有効にする
 3. パッケージインストーラーまたは Device Portal 等からインストール
