@@ -5,7 +5,8 @@ Vyline と LINE-Chrome-Android-App を参考に、 Codex と一緒に作成し�
 
 
 Windows 10 Mobile 1703 (Build 15063) 向け非公式LINEクライアント「LumINE」
-![icon](Assets/SmallTile.scale-150.png?raw=true)
+
+![icon](LumINE/Assets/StoreLogo.scale-200.png)
 
 
 
