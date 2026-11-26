@@ -29,6 +29,7 @@ namespace LumINE.Views
         private CancellationTokenSource _play;
         private bool _loaded, _animating, _completed;
         private Window _window;
+        private Message _soundCheckedFor;
 
         public ChatMediaView()
         {
@@ -36,17 +37,21 @@ namespace LumINE.Views
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
             Tapped += OnTapped;
-            RegisterPropertyChangedCallback(VisibilityProperty, (s, p) => { if (Visibility == Visibility.Visible) Start(); else Stop(); });
+            LayoutUpdated += (s, e) => TryAutoSound();
+            RegisterPropertyChangedCallback(VisibilityProperty, (s, p) => { if (Visibility == Visibility.Visible) { Start(); TryAutoSound(); } else { Stop(); StickerSoundPlayer.Stop(this); } });
         }
         private static void OnSourceChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
         {
             var view = (ChatMediaView)sender;
             if (!view._animating) view._image.Source = args.NewValue as ImageSource;
+            view.TryAutoSound();
         }
         private static void OnMessageChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
         {
             var view = (ChatMediaView)sender;
+            view._soundCheckedFor = null;
             view.Stop(); view.Start();
+            view.TryAutoSound();
         }
         private void OnLoaded(object sender, RoutedEventArgs args)
         {
@@ -55,6 +60,7 @@ namespace LumINE.Views
             _window = Window.Current;
             if (_window != null) _window.VisibilityChanged += OnWindowVisibilityChanged;
             Start();
+            TryAutoSound();
         }
         private void OnUnloaded(object sender, RoutedEventArgs args)
         {
@@ -63,10 +69,11 @@ namespace LumINE.Views
             if (_window != null) _window.VisibilityChanged -= OnWindowVisibilityChanged;
             _window = null;
             Stop();
+            StickerSoundPlayer.Stop(this);
         }
         private void OnWindowVisibilityChanged(object sender, Windows.UI.Core.VisibilityChangedEventArgs args)
         {
-            if (args.Visible) Start(); else Stop();
+            if (args.Visible) { Start(); TryAutoSound(); } else { Stop(); StickerSoundPlayer.Stop(this); }
         }
         private void OnSettingsChanged(string key) { if (key == "AnimateStickers") { Stop(); if (AppSettings.AnimateStickers) Start(); } }
         private void OnTapped(object sender, TappedRoutedEventArgs args)
@@ -77,7 +84,41 @@ namespace LumINE.Views
                 PhotoTapped?.Invoke(this, new RoutedEventArgs());
                 return;
             }
-            if (Message != null && Message.IsSticker && !Message.IsRevoked) { Stop(); Start(); }
+            if (Message != null && Message.IsSticker && !Message.IsRevoked)
+            {
+                args.Handled = true;
+                Stop(); Start();
+                var message = Message;
+                _soundCheckedFor = message;
+                _ = StickerSoundPlayer.PlayAsync(SessionManager.Current, message, true, this, () => object.ReferenceEquals(Message, message) && IsVisibleInViewport());
+            }
+        }
+        private void TryAutoSound()
+        {
+            var message = Message;
+            if (message == null || !message.IsSticker || message.IsRevoked || object.ReferenceEquals(_soundCheckedFor, message) || _image.Source == null || !IsVisibleInViewport()) return;
+            _soundCheckedFor = message;
+            _ = StickerSoundPlayer.PlayAsync(SessionManager.Current, message, false, this, () => object.ReferenceEquals(Message, message) && IsVisibleInViewport());
+        }
+        private bool IsVisibleInViewport()
+        {
+            if (!_loaded || ActualWidth <= 0 || ActualHeight <= 0 || (_window != null && !_window.Visible)) return false;
+            DependencyObject ancestor = this;
+            ScrollViewer viewport = null;
+            while (ancestor != null)
+            {
+                var element = ancestor as UIElement;
+                if (element != null && element.Visibility != Visibility.Visible) return false;
+                if (viewport == null) viewport = ancestor as ScrollViewer;
+                ancestor = VisualTreeHelper.GetParent(ancestor);
+            }
+            if (viewport == null || viewport.ActualWidth <= 0 || viewport.ActualHeight <= 0) return false;
+            try
+            {
+                var bounds = TransformToVisual(viewport).TransformBounds(new Windows.Foundation.Rect(0, 0, ActualWidth, ActualHeight));
+                return bounds.Right > 0 && bounds.Bottom > 0 && bounds.X < viewport.ActualWidth && bounds.Y < viewport.ActualHeight;
+            }
+            catch (InvalidOperationException) { return false; }
         }
         private void Stop()
         {

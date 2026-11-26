@@ -9,6 +9,16 @@ namespace LumINE.Models
         public string FromMid { get; set; }
         public long AtMillis { get; set; }
         public int Type { get; set; }
+        public string ProductId { get; set; }
+        public string EmojiId { get; set; }
+        public int? ResourceType { get; set; }
+        public long? Version { get; set; }
+        public int Count { get; set; } = 1;
+        public bool IsCustom { get { return !string.IsNullOrEmpty(ProductId) && !string.IsNullOrEmpty(EmojiId); } }
+        public bool IsPredefined { get { return !IsCustom; } }
+        public string Key { get { return IsCustom ? "emoji:" + ProductId + ":" + EmojiId : "preset:" + Type; } }
+        public string DisplayLabel { get { return IsCustom ? "絵文字" : Label(Type); } }
+        public string ImageUrl { get { return IsCustom ? "https://stickershop.line-scdn.net/sticonshop/v1/sticon/" + Uri.EscapeDataString(ProductId) + "/android/" + Uri.EscapeDataString(EmojiId) + ".png" : null; } }
         public static string Label(int type)
         {
             switch (type) { case 2: return "👍"; case 3: return "😍"; case 4: return "😆"; case 5: return "🙏"; case 6: return "😢"; case 7: return "😯"; default: return "?"; }
@@ -72,6 +82,7 @@ namespace LumINE.Models
         private Windows.UI.Xaml.Media.ImageSource _mediaImage;
         private Windows.UI.Xaml.Media.ImageSource _senderAvatar;
         private string _senderName;
+        private string _text;
         private string _timeLabel;
         private string _dateLabel;
         private string _readLabel;
@@ -81,24 +92,37 @@ namespace LumINE.Models
         private string _mediaLoadError;
         private List<MessageReaction> _reactions = new List<MessageReaction>();
         public bool ReactionsKnown { get; set; }
-        public List<MessageReaction> Reactions { get { return _reactions; } set { _reactions = value ?? new List<MessageReaction>(); Notify("Reactions"); Notify("ReactionSummary"); Notify("HasReactions"); } }
+        public List<MessageReaction> Reactions { get { return _reactions; } set { _reactions = value ?? new List<MessageReaction>(); Notify("Reactions"); Notify("ReactionSummary"); Notify("ReactionBadges"); Notify("HasReactions"); } }
+        public List<MessageReaction> ReactionBadges
+        {
+            get
+            {
+                var groups = new SortedDictionary<string, MessageReaction>(StringComparer.Ordinal);
+                if (IsRevoked) return new List<MessageReaction>();
+                foreach (var reaction in Reactions)
+                {
+                    MessageReaction badge;
+                    if (groups.TryGetValue(reaction.Key, out badge)) badge.Count++;
+                    else groups[reaction.Key] = new MessageReaction { Type = reaction.Type, ProductId = reaction.ProductId, EmojiId = reaction.EmojiId, ResourceType = reaction.ResourceType, Version = reaction.Version };
+                }
+                return new List<MessageReaction>(groups.Values);
+            }
+        }
         public bool HasReactions { get { return !IsRevoked && Reactions.Count > 0; } }
         public string ReactionSummary
         {
             get
             {
                 if (IsRevoked) return "";
-                var counts = new SortedDictionary<int, int>();
-                foreach (var reaction in Reactions) { int count; counts.TryGetValue(reaction.Type, out count); counts[reaction.Type] = count + 1; }
                 var labels = new List<string>();
-                foreach (var pair in counts) labels.Add(MessageReaction.Label(pair.Key) + " " + pair.Value);
+                foreach (var badge in ReactionBadges) labels.Add(badge.DisplayLabel + " " + badge.Count);
                 return string.Join("  ", labels);
             }
         }
         public string Id { get; set; }
         public string From { get; set; }
         public string To { get; set; }
-        public string Text { get; set; }
+        public string Text { get { return _text; } set { if (_text == value) return; _text = value; Notify("Text"); RefreshState(); } }
         public int ContentType { get; set; }
         public Dictionary<string, string> ContentMetadata { get; set; }
         public long? CreatedTime { get; set; }
@@ -107,20 +131,20 @@ namespace LumINE.Models
         public string MediaLoadError { get { return _mediaLoadError; } set { _mediaLoadError = value; Notify("MediaLoadError"); Notify("MediaFallbackText"); } }
         public string RelatedMessageId { get; set; }
         public int? RelationType { get; set; }
-        public string ReplyPreview { get { return _replyPreview; } set { _replyPreview = value; Notify("ReplyPreview"); Notify("HasReply"); } }
+        public string ReplyPreview { get { return _replyPreview; } set { if (_replyPreview == value) return; _replyPreview = value; Notify("ReplyPreview"); Notify("HasReply"); } }
         public bool HasReply { get { return !string.IsNullOrEmpty(ReplyPreview); } }
         public void RefreshState()
         {
-            Notify(""); Notify("DisplayText"); Notify("IsText"); Notify("HasMediaImage"); Notify("ShowMediaFallback"); Notify("CanUnsend"); Notify("BodyFontSize"); Notify("HasReactions"); Notify("ReactionSummary");
+            Notify(""); Notify("DisplayText"); Notify("IsText"); Notify("HasMediaImage"); Notify("ShowMediaFallback"); Notify("CanUnsend"); Notify("BodyFontSize"); Notify("HasReactions"); Notify("ReactionSummary"); Notify("ReactionBadges");
         }
-        public bool IsMine { get { return _isMine; } set { _isMine = value; Notify("IsMine"); Notify("ShowPeerInfo"); Notify("ShowReadLabel"); } }
+        public bool IsMine { get { return _isMine; } set { if (_isMine == value) return; _isMine = value; Notify("IsMine"); Notify("ShowPeerInfo"); Notify("ShowReadLabel"); } }
         public bool IsDateSeparator { get { return _isDateSeparator; } set { _isDateSeparator = value; Notify("IsDateSeparator"); Notify("IsText"); Notify("IsImage"); Notify("IsSticker"); Notify("ShowPeerInfo"); } }
         public string DateLabel { get { return _dateLabel; } set { _dateLabel = value; Notify("DateLabel"); } }
-        public string TimeLabel { get { return _timeLabel; } set { _timeLabel = value; Notify("TimeLabel"); } }
-        public string ReadLabel { get { return _readLabel; } set { _readLabel = value; Notify("ReadLabel"); Notify("ShowReadLabel"); } }
-        public string SenderName { get { return _senderName; } set { _senderName = value; Notify("SenderName"); } }
-        public Windows.UI.Xaml.Media.ImageSource SenderAvatar { get { return _senderAvatar; } set { _senderAvatar = value; Notify("SenderAvatar"); } }
-        public Windows.UI.Xaml.Media.ImageSource MediaImage { get { return _mediaImage; } set { _mediaImage = value; Notify("MediaImage"); Notify("HasMediaImage"); Notify("ShowMediaFallback"); } }
+        public string TimeLabel { get { return _timeLabel; } set { if (_timeLabel == value) return; _timeLabel = value; Notify("TimeLabel"); } }
+        public string ReadLabel { get { return _readLabel; } set { if (_readLabel == value) return; _readLabel = value; Notify("ReadLabel"); Notify("ShowReadLabel"); } }
+        public string SenderName { get { return _senderName; } set { if (_senderName == value) return; _senderName = value; Notify("SenderName"); } }
+        public Windows.UI.Xaml.Media.ImageSource SenderAvatar { get { return _senderAvatar; } set { if (object.ReferenceEquals(_senderAvatar, value)) return; _senderAvatar = value; Notify("SenderAvatar"); } }
+        public Windows.UI.Xaml.Media.ImageSource MediaImage { get { return _mediaImage; } set { if (object.ReferenceEquals(_mediaImage, value)) return; _mediaImage = value; Notify("MediaImage"); Notify("HasMediaImage"); Notify("ShowMediaFallback"); } }
         public bool IsImage { get { return ContentType == 1 && !IsDateSeparator; } }
         public bool IsSticker { get { return ContentType == 7 && !IsDateSeparator; } }
         public bool IsRevoked

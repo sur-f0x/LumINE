@@ -369,7 +369,7 @@ namespace LumINE.Services.Vyline
             foreach (var message in page)
             {
                 long ts = NormalizeTimestamp(message.CreatedTime ?? 0);
-                if (ts > 0 && ts < oldestTime) { oldestTime = ts; oldestId = message.Id; }
+                if (ts > 0 && (oldestId == null || ChatActivityProtocol.Compare(ts, message.Id, oldestTime, oldestId) < 0)) { oldestTime = ts; oldestId = message.Id; }
                 if (ts > 0 && ts < cutoff) reachedCutoff = true;
                 if ((ts == 0 || ts >= cutoff) && message.Id != null && seen.Add(message.Id)) output.Add(message);
             }
@@ -393,12 +393,19 @@ namespace LumINE.Services.Vyline
                     _messages[chatMid] = list;
                 }
                 var byId = new Dictionary<string, Message>(StringComparer.Ordinal);
-                foreach (var m in list) if (m.Id != null) byId[m.Id] = m;
+                foreach (var m in list) if (m != null && !string.IsNullOrEmpty(m.Id)) byId[m.Id] = m;
                 foreach (var m in incoming)
                 {
-                    if (m.Id == null) continue;
+                    if (m == null || string.IsNullOrEmpty(m.Id)) continue;
                     Message previous;
-                    if (byId.TryGetValue(m.Id, out previous) && previous.ContentMetadata != null)
+                    byId.TryGetValue(m.Id, out previous);
+                    if (previous != null)
+                    {
+                        if (!m.CreatedTime.HasValue || m.CreatedTime <= 0) m.CreatedTime = previous.CreatedTime;
+                        if (string.IsNullOrEmpty(m.From)) m.From = previous.From;
+                        if (string.IsNullOrEmpty(m.To)) m.To = previous.To;
+                    }
+                    if (previous != null && previous.ContentMetadata != null)
                     {
                         string oldRead, oldCount, newCount;
                         if (previous.ContentMetadata.TryGetValue("read", out oldRead) && oldRead == "1")
@@ -425,9 +432,9 @@ namespace LumINE.Services.Vyline
                         if (string.IsNullOrEmpty(m.ReplyPreview)) m.ReplyPreview = previous.ReplyPreview;
                         if (string.IsNullOrEmpty(m.RelatedMessageId)) { m.RelatedMessageId = previous.RelatedMessageId; m.RelationType = previous.RelationType; }
                     }
-                    if (previous != null && previous.Text == m.Text && previous.ContentType == m.ContentType &&
+                    if (previous != null && previous.CreatedTime == m.CreatedTime && previous.From == m.From && previous.To == m.To && previous.Text == m.Text && previous.ContentType == m.ContentType &&
                         previous.RelatedMessageId == m.RelatedMessageId && previous.ReactionsKnown == m.ReactionsKnown &&
-                        previous.Reactions.Count == m.Reactions.Count && m.Reactions.All(r => previous.Reactions.Any(p => p.FromMid == r.FromMid && p.Type == r.Type && p.AtMillis == r.AtMillis)) &&
+                        previous.Reactions.Count == m.Reactions.Count && m.Reactions.All(r => previous.Reactions.Any(p => p.FromMid == r.FromMid && p.Key == r.Key && p.ResourceType == r.ResourceType && p.Version == r.Version && p.AtMillis == r.AtMillis)) &&
                         ((previous.ContentMetadata == null && m.ContentMetadata == null) ||
                          (previous.ContentMetadata != null && m.ContentMetadata != null && previous.ContentMetadata.Count == m.ContentMetadata.Count &&
                           previous.ContentMetadata.All(pair => m.ContentMetadata.ContainsKey(pair.Key) && m.ContentMetadata[pair.Key] == pair.Value))))
@@ -438,7 +445,8 @@ namespace LumINE.Services.Vyline
                     else byId[m.Id] = m;
                 }
                 list.Clear();
-                list.AddRange(byId.Values.OrderBy(m => m.CreatedTime ?? 0).ThenBy(m => m.Id));
+                list.AddRange(byId.Values);
+                list.Sort(MessageTimeline.Compare);
                 if (list.Count > 0) UpdateActivityLocked(chatMid, list[list.Count - 1]);
                 foreach (var message in list)
                 {
@@ -854,6 +862,11 @@ namespace LumINE.Services.Vyline
                 item["from"] = Windows.Data.Json.JsonValue.CreateStringValue(reaction.FromMid ?? "");
                 item["at"] = Windows.Data.Json.JsonValue.CreateNumberValue(reaction.AtMillis);
                 item["type"] = Windows.Data.Json.JsonValue.CreateNumberValue(reaction.Type);
+                item["product"] = Windows.Data.Json.JsonValue.CreateStringValue(reaction.ProductId ?? "");
+                item["emoji"] = Windows.Data.Json.JsonValue.CreateStringValue(reaction.EmojiId ?? "");
+                if (reaction.ResourceType.HasValue) item["resource"] = Windows.Data.Json.JsonValue.CreateNumberValue(reaction.ResourceType.Value);
+                // Preserve I64 exactly; JSON numbers lose integer precision above 2^53.
+                if (reaction.Version.HasValue) item["version"] = Windows.Data.Json.JsonValue.CreateStringValue(reaction.Version.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 reactions.Add(item);
             }
             o["reactions"] = reactions;
@@ -882,7 +895,8 @@ namespace LumINE.Services.Vyline
                 foreach (var value in o.GetNamedArray("reactions"))
                 {
                     var item = value.GetObject();
-                    reactions.Add(new MessageReaction { FromMid = GetJsonStr(item, "from"), AtMillis = GetJsonLong(item, "at"), Type = (int)GetJsonLong(item, "type") });
+                    long version;
+                    reactions.Add(new MessageReaction { FromMid = GetJsonStr(item, "from"), AtMillis = GetJsonLong(item, "at"), Type = (int)GetJsonLong(item, "type"), ProductId = GetJsonStr(item, "product"), EmojiId = GetJsonStr(item, "emoji"), ResourceType = item.ContainsKey("resource") ? (int?)GetJsonLong(item, "resource") : null, Version = long.TryParse(GetJsonStr(item, "version"), out version) ? (long?)version : null });
                 }
                 m.Reactions = reactions;
                 m.ReactionsKnown = o.ContainsKey("reactionsKnown") && o.GetNamedBoolean("reactionsKnown");

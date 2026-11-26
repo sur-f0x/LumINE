@@ -30,6 +30,7 @@ namespace LumINE.Services.Vyline
         public string CallerMid { get; set; }
         public string ReactionActor { get; set; }
         public int? ReactionType { get; set; }
+        public LumINE.Models.MessageReaction CustomReaction { get; set; }
         public long ReactionAtMillis { get; set; }
         public string CallMid { get; set; }
     }

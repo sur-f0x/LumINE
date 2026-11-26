@@ -68,9 +68,9 @@ namespace LumINE.Services
         {
             var raw = await PostLegyRawAsync(endpoint, data, authToken, null, 15000, default(CancellationToken)).ConfigureAwait(false);
             if (raw.Status < 200 || raw.Status >= 300)
-                throw new Exception("Legy HTTP:" + raw.Status + ":" + (raw.Body == null ? 0 : raw.Body.Length));
+                throw new Exception("LINE HTTP " + raw.Status + " for " + endpoint + " via " + DesktopIdentity.Endpoint + " (bytes=" + (raw.Body == null ? 0 : raw.Body.Length) + ")");
             if (raw.Body == null || raw.Body.Length == 0)
-                return new Dictionary<int, object>();
+                throw new InvalidDataException("Empty LINE response for " + endpoint + " via " + DesktopIdentity.Endpoint);
             return Utils.ThriftBinary.UnpackBinary(raw.Body);
         }
 
@@ -82,58 +82,74 @@ namespace LumINE.Services
         }
 
         /// <summary>
-        /// Legy encrypted transport returning raw thrift body + x-line-next-access.
-        /// Uses DesktopIdentity headers when useDesktopIdentity is true (vyline parity).
+        /// Desktop HTTPS transport returning raw Thrift + x-line-next-access.
+        /// The retired gf.line.naver.jp/enc gateway returns HTTP 404. Keep this
+        /// entry point for existing callers, but send to the service path itself
+        /// as current vyline-api does. TLS protects the request and credentials.
         /// </summary>
         public async Task<LegyRawResult> PostLegyRawAsync(
             string endpoint, byte[] data, string authToken,
             Dictionary<string, string> extraHeaders, int timeoutMs,
             System.Threading.CancellationToken cancellationToken)
         {
-            byte[] aesKey = GenerateRandomBytes(16);
-            byte[] body = LeGyEncrypt(aesKey, endpoint, data, authToken);
-
-            Uri uri = new Uri(LineApiConfig.Legy + LineApiConfig.EpLegy);
-            var request = new HttpRequestMessage(HttpMethod.Post, uri);
-            request.Content = new HttpBufferContent(body.AsBuffer());
-            request.Content.Headers.ContentType = new HttpMediaTypeHeaderValue("application/x-thrift");
-            request.Content.Headers.ContentType.Parameters.Add(
-                new HttpNameValueHeaderValue("protocol", "TBINARY"));
-
-            var headers = LeGyHeaders(aesKey, authToken, extraHeaders);
-            foreach (var kv in headers)
+            Uri uri = new Uri(LineApiConfig.Legy + endpoint);
+            using (var request = new HttpRequestMessage(HttpMethod.Post, uri))
             {
-                if (kv.Key.Equals("content-type", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                // x-line-application contains TAB separators in the desktop
-                // identity. Headers.Add rejects those characters on UWP and
-                // the old catch silently dropped this required identity header.
-                // TryAppendWithoutValidation is available on Windows 10 1703.
-                if (!request.Headers.TryAppendWithoutValidation(kv.Key, kv.Value))
-                    throw new InvalidOperationException("Could not add Legy request header: " + kv.Key);
-            }
+                request.Content = new HttpBufferContent(data.AsBuffer());
+                request.Content.Headers.ContentType = new HttpMediaTypeHeaderValue("application/x-thrift");
 
-            using (var timeoutCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
-            {
-                if (timeoutMs > 0) timeoutCts.CancelAfter(timeoutMs);
-                var asyncOp = _httpClient.SendRequestAsync(request);
-                var response = await asyncOp.AsTask(timeoutCts.Token).ConfigureAwait(false);
-                using (response)
+                var headers = ServiceHeaders(authToken, extraHeaders);
+                foreach (var kv in headers)
                 {
-                    string nextAccess = null;
-                    if (response.Headers.ContainsKey("x-line-next-access"))
-                        nextAccess = response.Headers["x-line-next-access"];
-                    var responseData = await response.Content.ReadAsBufferAsync().AsTask(timeoutCts.Token).ConfigureAwait(false);
-                    byte[] responseBytes = new byte[(int)responseData.Length];
-                    DataReader.FromBuffer(responseData).ReadBytes(responseBytes);
-                    if (!response.IsSuccessStatusCode)
+                    // Preserve TAB separators in the desktop identity on UWP.
+                    if (!request.Headers.TryAppendWithoutValidation(kv.Key, kv.Value))
+                        throw new InvalidOperationException("Could not add LINE request header: " + kv.Key);
+                }
+
+                using (var timeoutCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    if (timeoutMs > 0) timeoutCts.CancelAfter(timeoutMs);
+                    var asyncOp = _httpClient.SendRequestAsync(request);
+                    var response = await asyncOp.AsTask(timeoutCts.Token).ConfigureAwait(false);
+                    using (response)
                     {
+                        string nextAccess = null;
+                        if (response.Headers.ContainsKey("x-line-next-access"))
+                            nextAccess = response.Headers["x-line-next-access"];
+                        var responseData = await response.Content.ReadAsBufferAsync().AsTask(timeoutCts.Token).ConfigureAwait(false);
+                        byte[] responseBytes = new byte[(int)responseData.Length];
+                        DataReader.FromBuffer(responseData).ReadBytes(responseBytes);
                         return new LegyRawResult { Body = responseBytes, NextAccess = nextAccess, Status = (int)response.StatusCode };
                     }
-                    var inner = LeGyDecrypt(aesKey, responseBytes);
-                    return new LegyRawResult { Body = inner, NextAccess = nextAccess, Status = (int)response.StatusCode };
                 }
             }
+        }
+
+        private static Dictionary<string, string> ServiceHeaders(string authToken, Dictionary<string, string> extraHeaders)
+        {
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["x-line-application"] = DesktopIdentity.ApplicationHeader,
+                ["User-Agent"] = DesktopIdentity.UserAgent,
+                ["x-lap"] = DesktopIdentity.Lap,
+                ["x-lpv"] = DesktopIdentity.Lpv,
+                ["x-lhm"] = "POST",
+                ["x-lal"] = DesktopIdentity.Lal,
+                ["accept"] = "application/x-thrift",
+                ["accept-encoding"] = "gzip, deflate",
+            };
+            if (extraHeaders != null)
+                foreach (var header in extraHeaders)
+                {
+                    if (header.Key.Equals("content-type", StringComparison.OrdinalIgnoreCase) ||
+                        header.Key.Equals("Host", StringComparison.OrdinalIgnoreCase) ||
+                        header.Key.Equals("connection", StringComparison.OrdinalIgnoreCase) ||
+                        header.Key.Equals("x-le", StringComparison.OrdinalIgnoreCase) ||
+                        header.Key.Equals("x-lcs", StringComparison.OrdinalIgnoreCase)) continue;
+                    headers[header.Key] = header.Value;
+                }
+            if (!string.IsNullOrEmpty(authToken)) headers["x-line-access"] = authToken;
+            return headers;
         }
 
         private Dictionary<string, string> LeGyHeaders(byte[] aesKey, string authToken, Dictionary<string, string> extraHeaders = null)

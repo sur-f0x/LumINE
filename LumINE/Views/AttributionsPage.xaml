@@ -10,7 +10,7 @@
         </Grid>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="16" MaxWidth="760" HorizontalAlignment="Stretch">
-                <TextBlock Text="LumINE 1.0" FontSize="24" Foreground="#3F4663" Margin="0,0,0,12"/>
+                <TextBlock Text="LumINE 1.1" FontSize="24" Foreground="#3F4663" Margin="0,0,0,12"/>
                 <TextBlock Text="LumINE は Vyline の設計・実装を出発点として制作しました。Vyline Team、nezumi0627 氏、貢献者の皆さまに敬意と感謝を表します。" TextWrapping="Wrap" Foreground="#303030"/>
                 <HyperlinkButton Content="Vyline — 移植元プロジェクト" NavigateUri="https://github.com/nezumi0627/vyline" HorizontalAlignment="Left"/>
                 <HyperlinkButton Content="linejs — E2EE・画像転送の参考実装" NavigateUri="https://github.com/evex-dev/linejs" HorizontalAlignment="Left"/>

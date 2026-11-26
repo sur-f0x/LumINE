@@ -20,7 +20,7 @@ namespace Windows.UI.Xaml.Controls {
     }
 }
 namespace Windows.UI.Core { public enum CoreDispatcherPriority { Normal } }
-namespace LumINE.Views { public class ChatRoomPage {} public class ChatListPage {} public class UnlockPage {} public class LoginPage {} }
+namespace LumINE.Views { public class ChatRoomPage {} public class ChatListPage { public string ChatId; public void OpenChat(string id) { ChatId=id; } } public class UnlockPage {} public class LoginPage {} }
 namespace LumINE.Utils { public static class CrashDiagnostics { public static int Errors; public static void Record(string stage,Exception error) { Errors++; } } }
 namespace LumINE {
     public class BootstrapHarness {
@@ -59,18 +59,18 @@ public static class NavigationChecks {
         foreach(string chat in new[]{"upeer123","cgroup456","rroom789"}) {
             Login("acc.test:slot"); var frame=new Frame();
             NotificationNavigation.Receive(NotificationRoute.Encode(SessionManager.Current.AccountId,chat));
-            Check(NotificationNavigation.OpenPending(frame) && frame.Content is ChatRoomPage && (string)frame.Parameter==chat,"Cold notification did not open the selected conversation.");
-            Check(frame.BackStack.Count==1 && frame.BackStack[0].SourcePageType==typeof(ChatListPage),"Cold notification has no back path to the list.");
+            Check(NotificationNavigation.OpenPending(frame) && frame.Content is ChatListPage && ((ChatListPage)frame.Content).ChatId==chat,"Cold notification did not open the selected conversation.");
+            Check(frame.BackStack.Count==0,"Cold notification has no back path to the list.");
             Check(!NotificationNavigation.OpenPending(frame) && frame.Navigations==1,"Pending notification was opened twice.");
         }
         var warm=new Frame { Content=new ChatRoomPage() }; warm.BackStack.Add(new PageStackEntry(typeof(ChatRoomPage),null,null));
         NotificationNavigation.Receive(encoded);
-        Check(NotificationNavigation.OpenPending(warm) && (string)warm.Parameter=="upeer123" && warm.BackStack.Count==1 && warm.BackStack[0].SourcePageType==typeof(ChatListPage),"A live different conversation did not switch cleanly.");
+        Check(NotificationNavigation.OpenPending(warm) && ((ChatListPage)warm.Content).ChatId=="upeer123" && warm.BackStack.Count==0,"A live different conversation did not switch cleanly.");
         var locked=new Frame { Content=new UnlockPage() };
         NotificationNavigation.Receive(encoded);
         Check(!NotificationNavigation.OpenPending(locked) && NotificationNavigation.PendingAccountId=="acc.test:slot","Notification bypassed Windows Hello or lost its pending target.");
         locked.Content=new ChatListPage();
-        Check(NotificationNavigation.OpenPending(locked) && locked.Content is ChatRoomPage,"Unlock did not consume the pending conversation.");
+        Check(NotificationNavigation.OpenPending(locked) && locked.Content is ChatListPage && ((ChatListPage)locked.Content).ChatId=="upeer123","Unlock did not consume the pending conversation.");
         SessionManager.IsLoggedIn=false; var loggedOut=new Frame(); NotificationNavigation.Receive(encoded);
         Check(!NotificationNavigation.OpenPending(loggedOut) && loggedOut.Navigations==0,"Notification bypassed session restore/login.");
         Login("acc.test:slot"); Check(NotificationNavigation.OpenPending(loggedOut),"Login lost the notification target.");
@@ -78,14 +78,14 @@ public static class NavigationChecks {
         Check(!NotificationNavigation.OpenPending(new Frame()) && NotificationNavigation.PendingAccountId==null,"Notification opened a chat under the wrong account.");
         Login("acc.test:slot"); NotificationNavigation.Receive(encoded);
         NotificationNavigation.Receive(NotificationRoute.Encode("acc.test:slot","clatest"));
-        var latest=new Frame(); Check(NotificationNavigation.OpenPending(latest) && (string)latest.Parameter=="clatest","A later notification tap did not replace the pending target.");
+        var latest=new Frame(); Check(NotificationNavigation.OpenPending(latest) && ((ChatListPage)latest.Content).ChatId=="clatest","A later notification tap did not replace the pending target.");
         NotificationNavigation.Receive(null); SessionManager.Current=null; SessionManager.IsLoggedIn=false;
         var restoring=new Frame(); var app=new LumINE.BootstrapHarness();
         app.Launch(restoring,""); NotificationNavigation.Receive(encoded); app.Launch(restoring,encoded);
         Check(SessionManager.Restores==1 && app.Running,"Tapping a notification during cold restore created a competing session.");
         SessionManager.RestoreCompletion.SetResult(true);
         for(int i=0;i<200 && app.Running;i++) Task.Delay(5).GetAwaiter().GetResult();
-        Check(!app.Running && restoring.Content is ChatRoomPage && (string)restoring.Parameter=="upeer123","Cold session restore lost the latest notification tap.");
+        Check(!app.Running && restoring.Content is ChatListPage && ((ChatListPage)restoring.Content).ChatId=="upeer123","Cold session restore lost the latest notification tap.");
         Check(SessionManager.Restores==1 && restoring.Navigations==1 && LumINE.Utils.CrashDiagnostics.Errors==0,"Cold activation duplicated navigation or faulted.");
         Console.WriteLine("PASS: "+Count+" notification routing, XML, cold/warm launch, authentication and back-navigation checks.");
     }

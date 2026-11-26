@@ -1,6 +1,6 @@
 # 謝辞
 
-LumINE 1.0 は、Windows 10 Mobile 1703 向けの非公式 LINE クライアントです。
+LumINE 1.1 は、Windows 10 Mobile 1703 向けの非公式 LINE クライアントです。
 
 本プロジェクトは [Vyline](https://github.com/nezumi0627/vyline) の設計と実装を出発点としています。LINE の通信、認証、E2EE、トーク同期、キャッシュ管理を公開し、移植の道筋を示してくださった **Vyline Team、nezumi0627 氏、各コントリビューター**に感謝します。
 

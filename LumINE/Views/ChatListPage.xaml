@@ -12,12 +12,16 @@
 
     <Page.Resources>
         <vm:BoolVisibilityConverter x:Key="BoolVisibilityConverter"/>
+        <Style x:Key="ChatRowContainerStyle" TargetType="ListViewItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
 <DataTemplate x:Key="ChatRowTemplate">
-                        <Grid Padding="12,10">
+                        <Grid Padding="12,10" HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="60"/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto" MinWidth="56"/>
                         </Grid.ColumnDefinitions>
                         <Grid Grid.Column="0" Width="52" Height="52">
                             <Ellipse Fill="#E0E0E0"/>
@@ -27,7 +31,7 @@
                                 </Ellipse.Fill>
                             </Ellipse>
                         </Grid>
-                        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
                             <TextBlock Text="{Binding Name}" FontSize="17" TextTrimming="CharacterEllipsis"/>
                             <TextBlock Text="{Binding LastMessagePreview}" FontSize="14" Foreground="#9297A2" TextTrimming="CharacterEllipsis" MaxLines="1" Margin="0,4,0,0"/>
                         </StackPanel>
@@ -44,17 +48,71 @@
     </Page.Resources>
 
     <Grid>
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup>
+                <VisualState x:Name="WideLayout">
+                    <VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="900"/></VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="NavigationRail.Visibility" Value="Visible"/>
+                        <Setter Target="MobileTabs.Visibility" Value="Collapsed"/>
+                        <Setter Target="ListCommands.Visibility" Value="Collapsed"/>
+                        <Setter Target="ChatsFlip.Visibility" Value="Collapsed"/>
+                        <Setter Target="WideChatsList.Visibility" Value="Visible"/>
+                        <Setter Target="RosterColumn.Width" Value="*"/>
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="NarrowLayout">
+                    <VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="0"/></VisualState.StateTriggers>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <SplitView x:Name="WorkspaceSplit" DisplayMode="Inline" IsPaneOpen="True" OpenPaneLength="380" PaneBackground="White">
+            <SplitView.Pane>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition x:Name="RosterColumn" Width="*"/></Grid.ColumnDefinitions>
+                    <ListView x:Name="NavigationRail" Width="56" Padding="0" Background="#3F4663" Foreground="#8590A8" Visibility="Collapsed"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollMode="Disabled"
+                              SelectionMode="None" IsItemClickEnabled="False" IsTabStop="False" HorizontalContentAlignment="Stretch"
+                              AutomationProperties.Name="ナビゲーション">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0"/>
+                                <Setter Property="MinWidth" Value="0"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="IsTabStop" Value="False"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListViewItem">
+                                            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center"/>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <Button Click="FriendsTab_Click" Background="Transparent" Foreground="{Binding Foreground, ElementName=FriendsTabIcon}" BorderThickness="0" Padding="0" Width="56" MinWidth="0" Height="48" HorizontalAlignment="Center" HorizontalContentAlignment="Center" AutomationProperties.Name="友だち" ToolTipService.ToolTip="友だち">
+                            <TextBlock Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="30" Foreground="{Binding Foreground, ElementName=FriendsTabIcon}"/>
+                        </Button>
+                        <Button Click="GroupsTab_Click" Background="Transparent" Foreground="{Binding Foreground, ElementName=GroupsTabIcon}" BorderThickness="0" Padding="0" Width="56" MinWidth="0" Height="48" HorizontalAlignment="Center" HorizontalContentAlignment="Center" AutomationProperties.Name="グループ" ToolTipService.ToolTip="グループ">
+                            <TextBlock Text="&#xE902;" FontFamily="Segoe MDL2 Assets" FontSize="30" Foreground="{Binding Foreground, ElementName=GroupsTabIcon}"/>
+                        </Button>
+                        <Button Click="SearchButton_Click" Background="Transparent" Foreground="#8590A8" BorderThickness="0" Padding="0" Width="56" MinWidth="0" Height="48" HorizontalAlignment="Center" HorizontalContentAlignment="Center" AutomationProperties.Name="検索" ToolTipService.ToolTip="検索"><SymbolIcon Symbol="Find"/></Button>
+                        <Button Click="MoreButton_Click" Background="Transparent" Foreground="#8590A8" BorderThickness="0" Padding="0" Width="56" MinWidth="0" Height="48" HorizontalAlignment="Center" HorizontalContentAlignment="Center" AutomationProperties.Name="設定" ToolTipService.ToolTip="設定"><SymbolIcon Symbol="Setting"/></Button>
+                    </ListView>
+                    <Border Grid.Column="1" BorderBrush="#E0E2E8" BorderThickness="0,0,1,0">
+    <Grid>
         <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <StackPanel Grid.Row="0" Background="#3F4663">
+        <StackPanel x:Name="ListHeader" Grid.Row="0" Background="#3F4663">
             <Grid Height="36">
                 <TextBlock x:Name="PageTitleText" Text="友だち" Foreground="White" FontSize="18" VerticalAlignment="Center" Margin="12,0"/>
             </Grid>
-            <Grid Height="48">
+            <Grid x:Name="MobileTabs" Height="48">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <Button x:Name="FriendsTabButton" Grid.Column="0" Click="FriendsTab_Click" Background="Transparent" Foreground="White" BorderThickness="0" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="友だち" ToolTipService.ToolTip="友だち"><TextBlock x:Name="FriendsTabIcon" Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="30"/></Button>
                 <Button x:Name="GroupsTabButton" Grid.Column="1" Click="GroupsTab_Click" Background="Transparent" Foreground="#8590A8" BorderThickness="0" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="グループ" ToolTipService.ToolTip="グループ"><TextBlock x:Name="GroupsTabIcon" Text="&#xE902;" FontFamily="Segoe MDL2 Assets" FontSize="30"/></Button>
@@ -69,22 +127,37 @@
         </StackPanel>
         <Grid Grid.Row="1" Background="White">
 
+        <ListView x:Name="WideChatsList" Visibility="Collapsed" ItemsSource="{Binding Chats}" ItemTemplate="{StaticResource ChatRowTemplate}"
+                  ItemContainerStyle="{StaticResource ChatRowContainerStyle}" HorizontalContentAlignment="Stretch" Background="White" Foreground="#222222"
+                  IsItemClickEnabled="True" ItemClick="ChatList_ItemClick" IsSwipeEnabled="False"/>
         <FlipView x:Name="ChatsFlip" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
             <FlipViewItem HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                <ListView x:Name="FriendsList" ItemsSource="{Binding FriendChats}" ItemTemplate="{StaticResource ChatRowTemplate}" Background="White" Foreground="#222222" IsItemClickEnabled="True" ItemClick="ChatList_ItemClick" IsSwipeEnabled="False"/>
+                <ListView x:Name="FriendsList" ItemsSource="{Binding FriendChats}" ItemTemplate="{StaticResource ChatRowTemplate}" ItemContainerStyle="{StaticResource ChatRowContainerStyle}" HorizontalContentAlignment="Stretch" Background="White" Foreground="#222222" IsItemClickEnabled="True" ItemClick="ChatList_ItemClick" IsSwipeEnabled="False"/>
             </FlipViewItem>
             <FlipViewItem HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                <ListView x:Name="GroupsList" ItemsSource="{Binding GroupChats}" ItemTemplate="{StaticResource ChatRowTemplate}" Background="White" Foreground="#222222" IsItemClickEnabled="True" ItemClick="ChatList_ItemClick" IsSwipeEnabled="False"/>
+                <ListView x:Name="GroupsList" ItemsSource="{Binding GroupChats}" ItemTemplate="{StaticResource ChatRowTemplate}" ItemContainerStyle="{StaticResource ChatRowContainerStyle}" HorizontalContentAlignment="Stretch" Background="White" Foreground="#222222" IsItemClickEnabled="True" ItemClick="ChatList_ItemClick" IsSwipeEnabled="False"/>
             </FlipViewItem>
         </FlipView>
         <TextBlock Text="{Binding StatusMessage}" Foreground="#B00020" TextWrapping="Wrap" Margin="12,6" VerticalAlignment="Top" IsHitTestVisible="False"/>
         </Grid>
         <ProgressBar Grid.Row="2" Height="3" MinHeight="3" Margin="0" Foreground="#06C755" Background="Transparent"
                      IsIndeterminate="{Binding IsBusy}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibilityConverter}}" AutomationProperties.Name="処理中"/>
-        <CommandBar Grid.Row="3" Background="#F1F2F6" Foreground="#9CA3AF" ClosedDisplayMode="Compact" IsOpen="False" IsDynamicOverflowEnabled="False">
+        <CommandBar x:Name="ListCommands" Grid.Row="3" Background="#F1F2F6" Foreground="#9CA3AF" ClosedDisplayMode="Compact" IsOpen="False" IsDynamicOverflowEnabled="False">
             <AppBarButton Icon="Find" Label="検索" Click="SearchButton_Click"/>
             <AppBarButton Icon="Add" Label="新しいトーク" Click="AddButton_Click"/>
             <CommandBar.SecondaryCommands><AppBarButton Label="設定" Click="MoreButton_Click"/></CommandBar.SecondaryCommands>
         </CommandBar>
+    </Grid>
+                    </Border>
+                </Grid>
+            </SplitView.Pane>
+            <Grid Background="#F5F6FA">
+                <ContentControl x:Name="EmptyConversation" HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <StackPanel HorizontalAlignment="Center"><SymbolIcon Symbol="Message" Foreground="#CDD0D9" Width="64" Height="64"/>
+                        <TextBlock Text="LumINE でトークしましょう" Foreground="#9297A2" Margin="0,18,0,0"/></StackPanel>
+                </ContentControl>
+                <Frame x:Name="ConversationFrame" Navigated="ConversationFrame_Navigated"/>
+            </Grid>
+        </SplitView>
     </Grid>
 </Page>

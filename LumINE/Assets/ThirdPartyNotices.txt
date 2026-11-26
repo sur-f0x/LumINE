@@ -1,4 +1,4 @@
-# Third-party notices — LumINE 1.0
+# Third-party notices — LumINE 1.1
 
 | プロジェクト / ライブラリ | 用途 | ライセンスと原文 |
 | --- | --- | --- |

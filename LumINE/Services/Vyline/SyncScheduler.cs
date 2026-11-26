@@ -255,7 +255,7 @@ namespace LumINE.Services.Vyline
 
         private static string ReactionSignature(Message message)
         {
-            return string.Join("|", message.Reactions.OrderBy(r => r.FromMid, StringComparer.Ordinal).Select(r => r.FromMid + ":" + r.Type));
+            return string.Join("|", message.Reactions.OrderBy(r => r.FromMid, StringComparer.Ordinal).Select(r => r.FromMid + ":" + r.Key));
         }
 
         private async Task ApplyEventsAsync(List<TalkPollEvent> events)
@@ -302,7 +302,7 @@ namespace LumINE.Services.Vyline
                         {
                             try
                             {
-                                if (!ev.ReactionType.HasValue || string.IsNullOrEmpty(ev.ReactionActor))
+                                if ((!ev.ReactionType.HasValue && ev.CustomReaction == null) || string.IsNullOrEmpty(ev.ReactionActor))
                                     await _store.RefreshRecentMessagesAsync(ev.ChatMid, 100).ConfigureAwait(false);
                             }
                             catch { }

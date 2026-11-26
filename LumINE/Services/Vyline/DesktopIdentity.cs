@@ -25,7 +25,7 @@ namespace LumINE.Services.Vyline
             get { return "DESKTOP:" + SystemName + ":" + SystemVersion + "(" + AppVersion + ")"; }
         }
 
-        public const string Endpoint = "legy.line-apps.com";
+        public const string Endpoint = "legy-jp.line-apps.com";
         public const string Lal = "ja_JP";
         public const string Lpv = "1";
         public const string Lap = "5";

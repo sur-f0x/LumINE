@@ -43,6 +43,8 @@ namespace LumINE.Services.Vyline
                     await _session.Store.ApplyRemoteRevokeAsync(ev.ChatMid, ev.MessageId).ConfigureAwait(false);
                 if (ev.Kind == TalkEventKind.Reaction && ev.ReactionType.HasValue && !string.IsNullOrEmpty(ev.ReactionActor))
                     await _session.Store.ApplyReactionAsync(ev.ChatMid, ev.MessageId, ev.ReactionActor, ev.ReactionType.Value, ev.ReactionAtMillis).ConfigureAwait(false);
+                else if (ev.Kind == TalkEventKind.Reaction && ev.CustomReaction != null && !string.IsNullOrEmpty(ev.ReactionActor))
+                    await _session.Store.ApplyCustomReactionAsync(ev.ChatMid, ev.MessageId, ev.ReactionActor, ev.CustomReaction, ev.ReactionAtMillis).ConfigureAwait(false);
                 // Notification delivery must not wait for the hidden UI's
                 // event-drain timer: the long-poll loop remains the receiver.
                 if (ev.Kind == TalkEventKind.Message && ev.RawMessage != null)
@@ -122,6 +124,7 @@ namespace LumINE.Services.Vyline
                         MessageId = param1,
                         ReactionActor = reaction.ActorMid,
                         ReactionType = reaction.Type,
+                        CustomReaction = reaction.CustomReaction,
                         ReactionAtMillis = at > 0 ? at : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                     };
                 }

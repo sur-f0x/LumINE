@@ -198,6 +198,12 @@
     <Compile Include="Utils\CrashDiagnostics.cs" />
     <Compile Include="Views\MessageText.cs" />
     <Compile Include="Utils\ApngAnimation.cs" />
+    <Compile Include="Services\Vyline\MessageTimeline.cs" />
+    <Compile Include="Services\Vyline\EmojiReactionCatalog.cs" />
+    <Compile Include="Services\Vyline\StickerCatalogProtocol.cs" />
+    <Compile Include="Services\Vyline\StickerSoundPlayer.cs" />
+    <Compile Include="Services\Vyline\StickerSoundHistory.cs" />
+    <Compile Include="ViewModels\MessageCollection.cs" />
     <Compile Include="Services\Vyline\StickerAnimationCache.cs" />
     <Compile Include="Views\ChatMediaView.cs" />
     <Compile Include="Utils\NotificationContent.cs" />

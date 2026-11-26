@@ -338,8 +338,8 @@ namespace LumINE.Services.Vyline
                     kv.Key.Equals("Host", StringComparison.OrdinalIgnoreCase) ||
                     kv.Key.Equals("connection", StringComparison.OrdinalIgnoreCase))
                     continue;
-                try { request.Headers.Add(kv.Key, kv.Value); }
-                catch { }
+                if (!request.Headers.TryAppendWithoutValidation(kv.Key, kv.Value))
+                    throw new InvalidOperationException("Could not add LINE request header: " + kv.Key);
             }
             request.Content = new HttpBufferContent(body.AsBuffer());
             request.Content.Headers.ContentType = new Windows.Web.Http.Headers.HttpMediaTypeHeaderValue("application/x-thrift");

@@ -54,11 +54,11 @@ namespace LumINE.Utils
             if (route == null || !SessionManager.IsLoggedIn || frame.Content is UnlockPage) return false;
             _pending = null;
             if (!string.Equals(SessionManager.Current.AccountId, route.AccountId, StringComparison.Ordinal)) return false;
-            if (!frame.Navigate(typeof(ChatRoomPage), route.ChatId)) return false;
+            if (!(frame.Content is ChatListPage) && !frame.Navigate(typeof(ChatListPage), null)) return false;
             // Back always leads to the list, including a cold launch or a tap
             // while a different conversation/settings page was already open.
             frame.BackStack.Clear();
-            frame.BackStack.Add(new PageStackEntry(typeof(ChatListPage), null, null));
+            ((ChatListPage)frame.Content).OpenChat(route.ChatId);
             return true;
         }
     }

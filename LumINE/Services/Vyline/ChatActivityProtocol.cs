@@ -10,8 +10,27 @@ namespace LumINE.Services.Vyline
         {
             int time = Timestamp(leftTime).CompareTo(Timestamp(rightTime));
             if (time != 0) return time;
-            long left, right;
-            return long.TryParse(leftId, out left) && long.TryParse(rightId, out right) ? left.CompareTo(right) : string.CompareOrdinal(leftId, rightId);
+            return CompareIds(leftId, rightId);
+        }
+        public static int CompareIds(string left, string right)
+        {
+            bool ln = IsDigits(left), rn = IsDigits(right);
+            if (ln != rn) return ln ? -1 : 1;
+            if (ln)
+            {
+                string a = left.TrimStart('0'), b = right.TrimStart('0');
+                int size = a.Length.CompareTo(b.Length);
+                if (size != 0) return size;
+                int digits = string.CompareOrdinal(a, b);
+                if (digits != 0) return digits;
+            }
+            return string.CompareOrdinal(left, right);
+        }
+        private static bool IsDigits(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return false;
+            foreach (char c in value) if (c < '0' || c > '9') return false;
+            return true;
         }
         public static Dictionary<int, object> LatestMessage(Dictionary<int, object> box)
         {

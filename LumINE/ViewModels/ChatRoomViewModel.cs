@@ -3,6 +3,8 @@ using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
+using System.Threading;
+using System.Linq;
 using Windows.UI.Xaml.Media.Imaging;
 using LumINE.Models;
 using LumINE.Services.Vyline;
@@ -22,8 +24,13 @@ namespace LumINE.ViewModels
         public bool HasReplyTarget { get { return !string.IsNullOrEmpty(_replyTargetId); } }
         public event Action MessagesChanged;
         private readonly Dictionary<string, ChatStoreSenderInfo> _senderCache = new Dictionary<string, ChatStoreSenderInfo>(StringComparer.Ordinal);
+        private readonly SemaphoreSlim _senderGate = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _mediaGate = new SemaphoreSlim(4, 4);
+        private readonly HashSet<Message> _mediaLoads = new HashSet<Message>();
+        private Task _senderTask = Task.CompletedTask;
+        private bool _senderRefreshPending;
 
-        public ObservableCollection<Message> Messages { get; set; } = new ObservableCollection<Message>();
+        public MessageCollection Messages { get; } = new MessageCollection();
 
         public string MessageText
         {
@@ -139,12 +146,17 @@ namespace LumINE.ViewModels
 
         private async Task ReactCoreAsync(Message message, int type)
         {
+            await ReactCoreAsync(message, type == 0 ? null : new MessageReaction { Type = type });
+        }
+        public Task ReactAsync(Message message, MessageReaction reaction) { return RunBusyAsync(() => ReactCoreAsync(message, reaction)); }
+        private async Task ReactCoreAsync(Message message, MessageReaction reaction)
+        {
             var session = SessionManager.Current;
             if (session == null || message == null || message.IsRevoked) return;
             try
             {
-                await session.Line.ReactAsync(message.Id, type);
-                await session.Store.ApplyReactionAsync(_chatMid, message.Id, session.Mid, type, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                await session.Line.ReactAsync(message.Id, reaction);
+                await session.Store.ApplyCustomReactionAsync(_chatMid, message.Id, session.Mid, reaction, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 RefreshCachedMessages();
                 StatusMessage = "";
             }
@@ -156,8 +168,12 @@ namespace LumINE.ViewModels
             if (!LumINE.Utils.ForegroundUi.IsReady) return;
             try
             {
-                var byId = new Dictionary<string, Message>(StringComparer.Ordinal);
-                foreach (var item in messages) if (item != null && !string.IsNullOrEmpty(item.Id)) byId[item.Id] = item;
+                // Read the store at publication time: an older history request
+                // must not overwrite messages merged by a newer live request.
+                var snapshot = session.Store.GetCachedMessages(_chatMid);
+                messages = MessageTimeline.Normalize(snapshot.Count > 0 ? snapshot : messages);
+                if (!_historyLoaded && messages.Count > 50) messages = messages.Skip(messages.Count - 50).ToList();
+                var byId = messages.ToDictionary(item => item.Id, StringComparer.Ordinal);
                 foreach (var item in messages)
                 {
                     Message replied;
@@ -166,6 +182,8 @@ namespace LumINE.ViewModels
                     else if (item != null && !string.IsNullOrEmpty(item.RelatedMessageId) && string.IsNullOrEmpty(item.ReplyPreview)) item.ReplyPreview = "返信したメッセージ";
                 }
                 var desired = new List<Message>();
+                var separators = new Dictionary<string, Message>(StringComparer.Ordinal);
+                foreach (var old in Messages) if (old.IsDateSeparator && old.Id != null) separators[old.Id] = old;
                 DateTime? lastDate = null;
                 foreach (var msg in messages)
                 {
@@ -173,29 +191,23 @@ namespace LumINE.ViewModels
                     var date = GetLocalDate(msg.CreatedTime);
                     if (date.HasValue && (!lastDate.HasValue || date.Value.Date != lastDate.Value.Date))
                     {
-                        desired.Add(new Message { IsDateSeparator = true, DateLabel = date.Value.ToString("M月d日 (ddd)", new CultureInfo("ja-JP")) });
+                        string key = "date:" + date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        Message separator;
+                        if (!separators.TryGetValue(key, out separator)) separator = new Message { Id = key, IsDateSeparator = true, DateLabel = date.Value.ToString("M月d日 (ddd)", new CultureInfo("ja-JP")) };
+                        desired.Add(separator);
                         lastDate = date.Value.Date;
                     }
                     msg.TimeLabel = GetTimeLabel(msg.CreatedTime);
                     msg.ReadLabel = GetReadLabel(msg);
-                    if (!msg.IsMine) _ = LoadSenderInfoAsync(session, msg);
-                    if (!msg.IsRevoked && msg.MediaImage == null && (msg.ContentType == 1 || msg.ContentType == 7)) _ = LoadMessageImageAsync(session, msg);
                     desired.Add(msg);
                 }
-                for (int i = 0; i < desired.Count; i++)
-                {
-                    if (i < Messages.Count && Messages[i].IsDateSeparator && desired[i].IsDateSeparator && Messages[i].DateLabel == desired[i].DateLabel) continue;
-                    if (i < Messages.Count && object.ReferenceEquals(Messages[i], desired[i])) continue;
-                    int found = -1;
-                    if (!desired[i].IsDateSeparator)
-                        for (int j = i + 1; j < Messages.Count; j++) if (Messages[j].Id == desired[i].Id) { found = j; break; }
-                    if (found >= 0) { Messages.Move(found, i); Messages[i] = desired[i]; }
-                    else if (i < Messages.Count && Messages[i].Id == desired[i].Id) Messages[i] = desired[i];
-                    else Messages.Insert(i, desired[i]);
-                }
-                while (Messages.Count > desired.Count) Messages.RemoveAt(Messages.Count - 1);
+                // Prioritize recent media. Older images are requested only when
+                // their virtualized row becomes visible, not for all history.
+                foreach (var recent in messages.AsEnumerable().Reverse().Where(m => m.ContentType == 1 || m.ContentType == 7).Take(8)) PrepareMedia(recent);
+                bool updated = Messages.ApplySnapshot(desired);
+                QueueSenderInfo(session);
                 var changed = MessagesChanged;
-                if (scroll && changed != null) changed();
+                if (updated && scroll && changed != null) changed();
             }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("[ChatRoom] render messages failed: " + ex.Message); }
         }
@@ -235,33 +247,67 @@ namespace LumINE.ViewModels
 
         private async Task LoadMessageImageAsync(LineSession session, Message message)
         {
-            try { message.MediaImage = await MessageMediaCache.GetImageAsync(session, message); message.MediaLoadError = null; }
+            await _mediaGate.WaitAsync();
+            try { if (!message.IsRevoked) { message.MediaImage = await MessageMediaCache.GetImageAsync(session, message); message.MediaLoadError = null; } }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("[Media] load failed: " + ex); message.MediaLoadError = ex.Message; }
+            finally { _mediaGate.Release(); _mediaLoads.Remove(message); }
         }
 
-        private async Task LoadSenderInfoAsync(LineSession session, Message message)
+        public void PrepareMedia(Message message)
         {
+            var session = SessionManager.Current;
+            if (session == null || message == null || message.IsDateSeparator || message.IsRevoked || message.MediaImage != null || (message.ContentType != 1 && message.ContentType != 7)) return;
+            if (_mediaLoads.Add(message)) _ = LoadMessageImageAsync(session, message);
+        }
+
+        private void QueueSenderInfo(LineSession session)
+        {
+            _senderRefreshPending = true;
+            if (_senderTask.IsCompleted) _senderTask = LoadSenderInfosAsync(session);
+        }
+
+        private async Task LoadSenderInfosAsync(LineSession session)
+        {
+            await _senderGate.WaitAsync();
             try
             {
-                string name = message.From;
-                string picture = null;
-                ChatStoreSenderInfo cached;
-                if (!_senderCache.TryGetValue(message.From ?? "", out cached))
+                do
                 {
-                    var contact = await session.Talk.GetContactAsync(message.From);
-                    cached = new ChatStoreSenderInfo
+                    _senderRefreshPending = false;
+                    var messages = Messages.Reverse().Where(m => !m.IsDateSeparator && !m.IsMine && !string.IsNullOrEmpty(m.From)).ToList();
+                    var missing = messages.Select(m => m.From).Distinct(StringComparer.Ordinal).Where(mid => !_senderCache.ContainsKey(mid)).ToList();
+                    if (missing.Count > 0)
                     {
-                        Name = GetField(contact, 27) ?? GetField(contact, 22) ?? message.From,
-                        PicturePath = GetField(contact, 37)
-                    };
-                    _senderCache[message.From ?? ""] = cached;
-                }
-                name = cached.Name;
-                picture = cached.PicturePath;
-                message.SenderName = name;
-                if (!string.IsNullOrEmpty(picture)) message.SenderAvatar = await AvatarCache.GetAsync(session.AccountId, picture);
+                        var contacts = await session.Talk.GetContactsAsync(missing);
+                        foreach (var raw in contacts)
+                        {
+                            var contact = raw as Dictionary<int, object>;
+                            var mid = GetField(contact, 1);
+                            if (!string.IsNullOrEmpty(mid)) _senderCache[mid] = new ChatStoreSenderInfo { Name = GetField(contact, 27) ?? GetField(contact, 22) ?? mid, PicturePath = GetField(contact, 37) };
+                        }
+                        foreach (var mid in missing) if (!_senderCache.ContainsKey(mid)) _senderCache[mid] = new ChatStoreSenderInfo { Name = mid };
+                    }
+                    var avatars = new List<Task>();
+                    foreach (var mid in messages.Select(m => m.From).Distinct(StringComparer.Ordinal))
+                    {
+                        var info = _senderCache[mid];
+                        if (!info.AvatarLoaded) avatars.Add(LoadSenderAvatarAsync(session, info));
+                    }
+                    foreach (var message in messages) message.SenderName = _senderCache[message.From].Name;
+                    await Task.WhenAll(avatars);
+                    foreach (var message in messages) message.SenderAvatar = _senderCache[message.From].Avatar;
+                } while (_senderRefreshPending);
             }
-            catch { message.SenderName = message.From; }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("[ChatRoom] sender batch: " + ex.Message); }
+            finally { _senderGate.Release(); }
+        }
+
+        private async Task LoadSenderAvatarAsync(LineSession session, ChatStoreSenderInfo info)
+        {
+            await _mediaGate.WaitAsync();
+            try { if (!string.IsNullOrEmpty(info.PicturePath)) info.Avatar = await AvatarCache.GetAsync(session.AccountId, info.PicturePath); info.AvatarLoaded = true; }
+            catch { }
+            finally { _mediaGate.Release(); }
         }
 
         private static string GetField(Dictionary<int, object> fields, int id)
@@ -303,6 +349,8 @@ namespace LumINE.ViewModels
         {
             public string Name;
             public string PicturePath;
+            public bool AvatarLoaded;
+            public Windows.UI.Xaml.Media.ImageSource Avatar;
         }
 
         public Task SendMessageAsync() { return RunBusyAsync(SendMessageCoreAsync); }

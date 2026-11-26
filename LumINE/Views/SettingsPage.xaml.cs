@@ -14,6 +14,7 @@ namespace LumINE.Views
     {
         private readonly BaseViewModel _progress = new BaseViewModel();
         private bool _saving;
+        public bool IsSaving { get { return _saving; } }
         private void Attributions_Click(object sender, RoutedEventArgs args) { if (!_saving) Frame.Navigate(typeof(AttributionsPage)); }
         public SettingsPage() { InitializeComponent(); DataContext = _progress; }
         protected override void OnNavigatedTo(NavigationEventArgs args)
@@ -24,16 +25,18 @@ namespace LumINE.Views
             NotificationsToggle.IsEnabled = session != null;
             NotificationsToggle.IsOn = session != null && BackgroundNotifications.IsEnabled(session.AccountId);
             HelloToggle.IsOn = AppSettings.RequireHello; HideContentToggle.IsOn = AppSettings.HideMessageContent; AnimateToggle.IsOn = AppSettings.AnimateStickers;
+            StickerSoundToggle.IsOn = AppSettings.PlayStickerSounds;
             RefreshStatus();
         }
         protected override void OnNavigatedFrom(NavigationEventArgs args) { SystemNavigationManager.GetForCurrentView().BackRequested -= OnBackRequested; base.OnNavigatedFrom(args); }
-        private void OnBackRequested(object sender, BackRequestedEventArgs args) { if (_saving) { args.Handled = true; return; } if (Frame.CanGoBack) { args.Handled = true; Frame.GoBack(); } }
-        private void BackButton_Click(object sender, RoutedEventArgs args) { if (!_saving && Frame.CanGoBack) Frame.GoBack(); }
+        private void OnBackRequested(object sender, BackRequestedEventArgs args) { if (args.Handled) return; if (_saving) { args.Handled = true; return; } if (Frame != null && Frame.CanGoBack) { args.Handled = true; Frame.GoBack(); } }
+        private void BackButton_Click(object sender, RoutedEventArgs args) { if (!_saving && Frame.CanGoBack) Frame.GoBack(); else if (!_saving && Frame.Tag is ChatListPage) ((ChatListPage)Frame.Tag).ShowChatList(); }
         private void RefreshStatus() { NotificationStatusText.Text = BackgroundNotifications.RegistrationStatus + "\n" + BackgroundNotifications.RealtimeStatus + "\n" + BackgroundNotifications.DeliveryStatus; }
         private async void Save_Click(object sender, RoutedEventArgs args)
         {
             if (_saving) return; _saving = true; SaveButton.IsEnabled = false;
             bool hello = HelloToggle.IsOn, hide = HideContentToggle.IsOn, animate = AnimateToggle.IsOn, notifications = NotificationsToggle.IsOn;
+            bool stickerSounds = StickerSoundToggle.IsOn;
             using (_progress.BeginBusy())
             try
             {
@@ -44,6 +47,7 @@ namespace LumINE.Views
                 var session = SessionManager.Current;
                 if (session != null && notifications != BackgroundNotifications.IsEnabled(session.AccountId)) await BackgroundNotifications.SetEnabledAsync(session.AccountId, notifications);
                 AppSettings.RequireHello = hello; AppSettings.HideMessageContent = hide; AppSettings.AnimateStickers = animate;
+                AppSettings.PlayStickerSounds = stickerSounds;
                 if (!animate) PreparedStickerCache.Clear();
                 await BackgroundNotifications.ApplyContentPrivacyAsync();
                 StatusText.Text = "設定を保存しました。"; RefreshStatus();
@@ -58,7 +62,7 @@ namespace LumINE.Views
             if (_saving) return;
             if (await new ContentDialog { Title = "ログアウトしますか？", PrimaryButtonText = "ログアウト", CloseButtonText = "キャンセル" }.ShowAsync() != ContentDialogResult.Primary) return;
             _saving = true;
-            try { using (_progress.BeginBusy()) await SessionManager.LogoutAsync(); Frame.Navigate(typeof(LoginPage)); Frame.BackStack.Clear(); }
+            try { using (_progress.BeginBusy()) await SessionManager.LogoutAsync(); var root = (Frame)Window.Current.Content; root.Navigate(typeof(LoginPage)); root.BackStack.Clear(); }
             catch (Exception ex) { StatusText.Text = "ログアウトできませんでした: " + ex.Message; }
             finally { _saving = false; }
         }

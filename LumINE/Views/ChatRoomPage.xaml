@@ -15,6 +15,19 @@
         <vm:MessageBackgroundConverter x:Key="MessageBackgroundConverter"/>
         <vm:MessageForegroundConverter x:Key="MessageForegroundConverter"/>
         <vm:BoolVisibilityConverter x:Key="BoolVisibilityConverter"/>
+        <DataTemplate x:Key="ReactionBadgeTemplate">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding DisplayLabel}">
+                <Image Source="{Binding ImageUrl}" Width="24" Height="24" Stretch="Uniform" Visibility="{Binding IsCustom, Converter={StaticResource BoolVisibilityConverter}}"/>
+                <TextBlock Text="{Binding DisplayLabel}" FontFamily="Segoe UI Emoji" FontSize="18" VerticalAlignment="Center" Visibility="{Binding IsPredefined, Converter={StaticResource BoolVisibilityConverter}}"/>
+                <TextBlock Text="{Binding Count}" Foreground="#444444" FontSize="11" Margin="4,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="ReactionChoiceTemplate">
+            <Grid Width="48" Height="48" ToolTipService.ToolTip="{Binding DisplayLabel}">
+                <Image Source="{Binding ImageUrl}" Stretch="Uniform" Visibility="{Binding IsCustom, Converter={StaticResource BoolVisibilityConverter}}"/>
+                <TextBlock Text="{Binding DisplayLabel}" FontFamily="Segoe UI Emoji" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsPredefined, Converter={StaticResource BoolVisibilityConverter}}"/>
+            </Grid>
+        </DataTemplate>
     </Page.Resources>
 
     <Grid>
@@ -39,7 +52,7 @@
                     Click="SearchButton_Click" Background="Transparent" Foreground="White" BorderThickness="0" ToolTipService.ToolTip="トーク内を検索"/>
         </Grid>
         <ListView x:Name="MessagesList" Grid.Row="1" ItemsSource="{Binding Messages}" Background="#F2F2F2"
-                  HorizontalContentAlignment="Stretch" IsSwipeEnabled="False">
+                  HorizontalContentAlignment="Stretch" IsSwipeEnabled="False" ContainerContentChanging="MessagesList_ContainerContentChanging">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -95,8 +108,10 @@
                                                        Visibility="{Binding ShowMediaFallback, Converter={StaticResource BoolVisibilityConverter}}"/>
                                         </StackPanel>
                                     </Border>
-                                    <TextBlock Text="{Binding ReactionSummary}" FontFamily="Segoe UI Emoji" FontSize="13" Foreground="#444444" TextWrapping="Wrap" Margin="4,2"
-                                               Visibility="{Binding HasReactions, Converter={StaticResource BoolVisibilityConverter}}"/>
+                                    <ItemsControl ItemsSource="{Binding ReactionBadges}" ItemTemplate="{StaticResource ReactionBadgeTemplate}" Margin="4,2"
+                                                  Visibility="{Binding HasReactions, Converter={StaticResource BoolVisibilityConverter}}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3" ItemWidth="60" ItemHeight="28"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
                                     <TextBlock Text="{Binding TimeLabel}" FontSize="10" Foreground="#888888" Margin="4,0,0,0"/>
                                 </StackPanel>
                             </Grid>
@@ -116,8 +131,10 @@
                                                    Visibility="{Binding ShowMediaFallback, Converter={StaticResource BoolVisibilityConverter}}"/>
                                     </StackPanel>
                                 </Border>
-                                <TextBlock Text="{Binding ReactionSummary}" FontFamily="Segoe UI Emoji" FontSize="13" Foreground="#444444" TextWrapping="Wrap" Margin="4,2" HorizontalAlignment="Right"
-                                           Visibility="{Binding HasReactions, Converter={StaticResource BoolVisibilityConverter}}"/>
+                                <ItemsControl ItemsSource="{Binding ReactionBadges}" ItemTemplate="{StaticResource ReactionBadgeTemplate}" Margin="4,2" HorizontalAlignment="Right"
+                                              Visibility="{Binding HasReactions, Converter={StaticResource BoolVisibilityConverter}}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3" ItemWidth="60" ItemHeight="28"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                </ItemsControl>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,4,0">
                                     <TextBlock Text="{Binding ReadLabel}" FontSize="10" Foreground="#888888"
                                                Margin="0,0,5,0" Visibility="{Binding ShowReadLabel, Converter={StaticResource BoolVisibilityConverter}}"/>

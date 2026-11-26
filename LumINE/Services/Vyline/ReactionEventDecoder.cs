@@ -8,6 +8,7 @@ namespace LumINE.Services.Vyline
         public string ChatMid { get; set; }
         public string ActorMid { get; set; }
         public int? Type { get; set; }
+        public LumINE.Models.MessageReaction CustomReaction { get; set; }
     }
 
     public static class ReactionEventDecoder
@@ -31,6 +32,19 @@ namespace LumINE.Services.Vyline
                         int type;
                         if (current.GetObject().TryGetValue("predefinedReactionType", out raw) &&
                             int.TryParse(raw.ValueType == JsonValueType.String ? raw.GetString() : raw.Stringify(), out type) && type >= 2 && type <= 7) result.Type = type;
+                        else if (current.GetObject().TryGetValue("paidReactionType", out raw) && raw.ValueType == JsonValueType.Object)
+                        {
+                            var paid = raw.GetObject();
+                            var fields = new System.Collections.Generic.Dictionary<int, object>();
+                            int field = 1;
+                            foreach (string name in new[] { "productId", "emojiId", "resourceType", "version" })
+                            {
+                                IJsonValue value;
+                                if (paid.TryGetValue(name, out value)) fields[field] = value.ValueType == JsonValueType.String ? value.GetString() : value.Stringify();
+                                field++;
+                            }
+                            result.CustomReaction = ReactionProtocol.ReadType(new System.Collections.Generic.Dictionary<int, object> { { 2, fields } });
+                        }
                     }
                 }
             }

@@ -14,19 +14,34 @@ namespace LumINE.Views
         public ChatListViewModel ViewModel { get; set; }
         private bool _subscribed;
         private bool _active;
+        private string _selectedChat;
+        private string _accountId;
+        private bool IsWide { get { return ActualWidth >= 900; } }
 
         public ChatListPage()
         {
             ViewModel = new ChatListViewModel();
             this.InitializeComponent();
+            NavigationCacheMode = Windows.UI.Xaml.Navigation.NavigationCacheMode.Required;
             ChatsFlip.RegisterPropertyChangedCallback(Windows.UI.Xaml.Controls.Primitives.Selector.SelectedIndexProperty, OnTabSelectionChanged);
             this.DataContext = ViewModel;
+            ConversationFrame.Tag = this;
+            SizeChanged += (s, e) => { UpdateWorkspace(); UpdateTabButtons(); };
         }
 
         protected override async void OnNavigatedTo(Windows.UI.Xaml.Navigation.NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
+            var account = SessionManager.Current == null ? null : SessionManager.Current.AccountId;
+            if (_accountId != account)
+            {
+                _accountId = account; _selectedChat = null;
+                ViewModel = new ChatListViewModel(); DataContext = ViewModel;
+            }
             _active = true;
+            Windows.UI.Core.SystemNavigationManager.GetForCurrentView().BackRequested += WorkspaceBackRequested;
+            if (!string.IsNullOrEmpty(_selectedChat)) OpenChat(_selectedChat);
+            UpdateWorkspace();
             LumINE.Utils.ForegroundUi.Ready += OnChatsUpdated;
             ViewModel.LatestMessagesUpdated += ScrollToTop;
             if (_lastShowFriends) ViewModel.SelectFriends(); else ViewModel.SelectGroups();
@@ -53,6 +68,11 @@ namespace LumINE.Views
         {
             base.OnNavigatedFrom(e);
             _active = false;
+            Windows.UI.Core.SystemNavigationManager.GetForCurrentView().BackRequested -= WorkspaceBackRequested;
+            // Child Frame pages must receive OnNavigatedFrom when the root is
+            // replaced (Hello/login), otherwise hidden conversations keep polling.
+            if (ConversationFrame.Content != null) ConversationFrame.Navigate(typeof(Page));
+            ConversationFrame.BackStack.Clear();
             LumINE.Utils.ForegroundUi.Ready -= OnChatsUpdated;
             ViewModel.LatestMessagesUpdated -= ScrollToTop;
             var session = SessionManager.Current;
@@ -133,7 +153,7 @@ namespace LumINE.Views
         {
             var summary = e.ClickedItem as ChatSummary;
             if (summary == null || string.IsNullOrEmpty(summary.ChatMid)) return;
-            Frame.Navigate(typeof(ChatRoomPage), summary.ChatMid);
+            OpenChat(summary.ChatMid);
         }
 
         private void FriendsTab_Click(object sender, Windows.UI.Xaml.RoutedEventArgs e)
@@ -178,10 +198,13 @@ namespace LumINE.Views
             if (_active && ViewModel.Chats.Count > 0) { ChatsList.UpdateLayout(); ChatsList.ScrollIntoView(ViewModel.Chats[0], ScrollIntoViewAlignment.Leading); }
         }
         private void CloseSearch_Click(object sender, Windows.UI.Xaml.RoutedEventArgs e) { SearchInput.Text = ""; SearchPanel.Visibility = Windows.UI.Xaml.Visibility.Collapsed; }
-        private ListView ChatsList { get { return ViewModel.ShowFriends ? FriendsList : GroupsList; } }
+        private ListView ChatsList { get { return IsWide ? WideChatsList : ViewModel.ShowFriends ? FriendsList : GroupsList; } }
         private void OnTabSelectionChanged(Windows.UI.Xaml.DependencyObject sender, Windows.UI.Xaml.DependencyProperty property)
         {
-            if (!_active || ChatsFlip.SelectedIndex < 0) return;
+            // The desktop list is controlled by the navigation buttons. Focus
+            // changes during child-frame navigation must not select a hidden
+            // FlipView page and overwrite the active desktop tab.
+            if (!_active || IsWide || ChatsFlip.SelectedIndex < 0) return;
             _lastShowFriends = ChatsFlip.SelectedIndex == 0;
             if (_lastShowFriends != ViewModel.ShowFriends) { if (_lastShowFriends) ViewModel.SelectFriends(); else ViewModel.SelectGroups(); }
             UpdateTabButtons();
@@ -193,7 +216,47 @@ namespace LumINE.Views
 
         private void MoreButton_Click(object sender, Windows.UI.Xaml.RoutedEventArgs e)
         {
-            Frame.Navigate(typeof(SettingsPage));
+            ConversationFrame.Navigate(typeof(SettingsPage));
+            UpdateWorkspace();
+        }
+
+        public void OpenChat(string chatMid)
+        {
+            _selectedChat = chatMid;
+            ConversationFrame.Navigate(typeof(ChatRoomPage), chatMid);
+            ConversationFrame.BackStack.Clear();
+            UpdateWorkspace();
+        }
+
+        public void ShowChatList()
+        {
+            _selectedChat = null;
+            ConversationFrame.Navigate(typeof(Page));
+            ConversationFrame.BackStack.Clear();
+            UpdateWorkspace();
+        }
+
+        private void UpdateWorkspace()
+        {
+            if (WorkspaceSplit == null) return;
+            bool detail = ConversationFrame.Content != null && ConversationFrame.Content.GetType() != typeof(Page);
+            WorkspaceSplit.OpenPaneLength = IsWide ? 380 : Math.Max(0, ActualWidth);
+            WorkspaceSplit.IsPaneOpen = IsWide || !detail;
+            EmptyConversation.Visibility = detail ? Windows.UI.Xaml.Visibility.Collapsed : Windows.UI.Xaml.Visibility.Visible;
+            if (_active)
+                Windows.UI.Core.SystemNavigationManager.GetForCurrentView().AppViewBackButtonVisibility = detail
+                    ? Windows.UI.Core.AppViewBackButtonVisibility.Visible : Windows.UI.Core.AppViewBackButtonVisibility.Collapsed;
+        }
+
+        private void ConversationFrame_Navigated(object sender, Windows.UI.Xaml.Navigation.NavigationEventArgs args) { UpdateWorkspace(); }
+        private void WorkspaceBackRequested(object sender, Windows.UI.Core.BackRequestedEventArgs args)
+        {
+            if (args.Handled || !_active) return;
+            var settings = ConversationFrame.Content as SettingsPage;
+            if (settings != null && settings.IsSaving) { args.Handled = true; return; }
+            if (ConversationFrame.CanGoBack) { args.Handled = true; ConversationFrame.GoBack(); }
+            else if (!string.IsNullOrEmpty(_selectedChat) || ConversationFrame.Content is SettingsPage)
+            { args.Handled = true; ShowChatList(); }
         }
     }
 }

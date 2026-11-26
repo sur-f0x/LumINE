@@ -26,10 +26,33 @@ namespace LumINE.Views
         private bool _reactionOpen;
         private bool _openingPhoto;
         private bool _active;
+        private bool _followLatest;
+        private bool _bottomScrollQueued;
+        private ScrollViewer _messagesScroll;
+        private object _bottomScrollTarget;
 
         public ChatRoomPage()
         {
             this.InitializeComponent();
+            MessagesList.Loaded += (s, e) => QueueBottomScroll();
+            MessagesList.SizeChanged += (s, e) => QueueBottomScroll();
+            MessagesList.LayoutUpdated += (s, e) => QueueBottomScroll();
+            // Respect touch scrolling, scrollbar interaction, wheel scrolling
+            // and text selection even if a child already handled the pointer.
+            MessagesList.AddHandler(UIElement.PointerPressedEvent, new Windows.UI.Xaml.Input.PointerEventHandler((s, e) => _followLatest = false), true);
+            MessagesList.AddHandler(UIElement.PointerWheelChangedEvent, new Windows.UI.Xaml.Input.PointerEventHandler((s, e) => _followLatest = false), true);
+            MessagesList.AddHandler(UIElement.KeyDownEvent, new Windows.UI.Xaml.Input.KeyEventHandler((s, e) =>
+            {
+                if (e.Key == Windows.System.VirtualKey.End) ScrollToLatest();
+                else if (e.Key == Windows.System.VirtualKey.Up || e.Key == Windows.System.VirtualKey.Down ||
+                         e.Key == Windows.System.VirtualKey.PageUp || e.Key == Windows.System.VirtualKey.PageDown ||
+                         e.Key == Windows.System.VirtualKey.Home || e.Key == Windows.System.VirtualKey.Space) _followLatest = false;
+            }), true);
+        }
+
+        private void MessagesList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+        {
+            if (!args.InRecycleQueue && ViewModel != null) ViewModel.PrepareMedia(args.Item as Message);
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -75,6 +98,9 @@ namespace LumINE.Views
         {
             base.OnNavigatedFrom(e);
             _active = false;
+            StickerSoundPlayer.Stop();
+            _followLatest = false;
+            _bottomScrollTarget = null;
             LumINE.Utils.ForegroundUi.Ready -= OnForegroundReady;
             if (ViewModel != null) ViewModel.MessagesChanged -= ScrollToLatest;
             SystemNavigationManager.GetForCurrentView().BackRequested -= OnSystemBackRequested;
@@ -110,10 +136,12 @@ namespace LumINE.Views
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
             if (Frame != null && Frame.CanGoBack) Frame.GoBack();
+            else if (Frame != null && Frame.Tag is ChatListPage) ((ChatListPage)Frame.Tag).ShowChatList();
         }
 
         private void OnSystemBackRequested(object sender, BackRequestedEventArgs e)
         {
+            if (e.Handled) return;
             if (Frame != null && Frame.CanGoBack)
             {
                 e.Handled = true;
@@ -238,6 +266,7 @@ namespace LumINE.Views
             {
                 ViewModel.RefreshCachedMessages(); ViewModel.RefreshReadLabels();
                 foreach (var message in ViewModel.Messages) message.RefreshState();
+                QueueBottomScroll();
             }
             catch (Exception ex) { LumINE.Utils.CrashDiagnostics.Record("ChatRoom.Resume", ex); }
         }
@@ -245,7 +274,7 @@ namespace LumINE.Views
         private void ScrollForLatestReaction(IReadOnlyList<TalkPollEvent> events)
         {
             foreach (var ev in events)
-                if (ev.ChatMid == _chatMid && ev.Kind == TalkEventKind.Reaction && ev.ReactionType != 0 && ViewModel.IsLatestMessage(ev.MessageId))
+                if (ev.ChatMid == _chatMid && ev.Kind == TalkEventKind.Reaction && (ev.CustomReaction != null || ev.ReactionType != 0) && ViewModel.IsLatestMessage(ev.MessageId))
                 {
                     _searchPinned = false;
                     ScrollToLatest();
@@ -302,18 +331,67 @@ namespace LumINE.Views
             }
         }
 
-        private async void ScrollToLatest()
+        private void ScrollToLatest()
         {
+            if (!_active || _searchOpen || _searchPinned) return;
+            // Retain the request while SplitView closes its full-width pane.
+            // The conversation may still have zero width at this point.
+            _followLatest = true;
+            QueueBottomScroll();
+        }
+
+        private void QueueBottomScroll()
+        {
+            if (_bottomScrollQueued || !CanFollowLatest()) return;
+            _bottomScrollQueued = true;
             try
             {
-                if (!_active || !BackgroundNotifications.IsForeground || _searchOpen || _searchPinned) return;
-                await Task.Delay(40);
-                if (!_active || !BackgroundNotifications.IsForeground || _searchOpen || _searchPinned || ViewModel == null || ViewModel.Messages.Count == 0 || MessagesList.ActualHeight <= 0) return;
-                MessagesList.UpdateLayout();
-                var last = ViewModel.Messages[ViewModel.Messages.Count - 1];
-                if (MessagesList.Items.Contains(last)) MessagesList.ScrollIntoView(last);
+                var pending = Dispatcher.RunAsync(CoreDispatcherPriority.Low, () =>
+                {
+                    try { if (CanFollowLatest()) AlignLatestMessage(); }
+                    catch (Exception ex) { LumINE.Utils.CrashDiagnostics.Record("ChatRoom.Scroll", ex); }
+                    finally { _bottomScrollQueued = false; }
+                });
             }
-            catch (Exception ex) { LumINE.Utils.CrashDiagnostics.Record("ChatRoom.Scroll", ex); }
+            catch (Exception ex) { _bottomScrollQueued = false; LumINE.Utils.CrashDiagnostics.Record("ChatRoom.Scroll", ex); }
+        }
+
+        private bool CanFollowLatest()
+        {
+            return _active && _followLatest && BackgroundNotifications.IsForeground && !_searchOpen && !_searchPinned;
+        }
+
+        private void AlignLatestMessage()
+        {
+            if (ViewModel == null || ViewModel.Messages.Count == 0 || MessagesList.ActualWidth <= 0 || MessagesList.ActualHeight <= 0) return;
+            var last = ViewModel.Messages[ViewModel.Messages.Count - 1];
+            if (!MessagesList.Items.Contains(last)) return;
+            // Realize the last virtualized row before reading the scroll extent.
+            if (!object.ReferenceEquals(_bottomScrollTarget, last) || MessagesList.ContainerFromItem(last) == null)
+            {
+                _bottomScrollTarget = last;
+                MessagesList.ScrollIntoView(last);
+                MessagesList.UpdateLayout();
+            }
+            if (_messagesScroll == null) _messagesScroll = FindMessageScrollViewer(MessagesList);
+            if (_messagesScroll == null) return;
+            // ScrollIntoView only guarantees visibility; a tall wrapped message
+            // can still extend below the viewport. Align to the actual bottom.
+            // Later layout passes repeat this if images or row estimates grow.
+            if (Math.Abs(_messagesScroll.ScrollableHeight - _messagesScroll.VerticalOffset) > 0.5)
+                _messagesScroll.ChangeView(null, _messagesScroll.ScrollableHeight, null, true);
+        }
+
+        private static ScrollViewer FindMessageScrollViewer(DependencyObject parent)
+        {
+            var scroll = parent as ScrollViewer;
+            if (scroll != null) return scroll;
+            for (int i = 0; i < Windows.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                scroll = FindMessageScrollViewer(Windows.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i));
+                if (scroll != null) return scroll;
+            }
+            return null;
         }
 
         private async void ReactionMenu_Click(object sender, RoutedEventArgs e)
@@ -324,15 +402,56 @@ namespace LumINE.Views
             _reactionOpen = true;
             try
             {
-                var list = new ListView { SelectionMode = ListViewSelectionMode.Single, MaxHeight = 330 };
-                for (int type = 2; type <= 7; type++) list.Items.Add(MessageReaction.Label(type));
-                list.Items.Add("自分のリアクションを削除");
-                var dialog = new ContentDialog { Title = "リアクション", Content = list, PrimaryButtonText = "送信", CloseButtonText = "キャンセル", IsPrimaryButtonEnabled = false };
-                list.SelectionChanged += (s, args) => dialog.IsPrimaryButtonEnabled = list.SelectedIndex >= 0;
-                if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+                var session = SessionManager.Current;
+                if (session == null) return;
+                var standard = new List<MessageReaction>();
+                for (int type = 2; type <= 7; type++) standard.Add(new MessageReaction { Type = type });
+                var owned = new System.Collections.ObjectModel.ObservableCollection<EmojiReactionPack> { new EmojiReactionPack { Name = "基本リアクション" } };
+                var packs = new ComboBox { ItemsSource = owned, DisplayMemberPath = "Name", SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+                var list = new GridView { ItemsSource = standard, SelectionMode = ListViewSelectionMode.Single, MaxHeight = 280, ItemTemplate = (DataTemplate)Resources["ReactionChoiceTemplate"] };
+                var status = new TextBlock { Text = "所持絵文字を確認しています…", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) };
+                var panel = new StackPanel(); panel.Children.Add(packs); panel.Children.Add(list); panel.Children.Add(status);
+                var dialog = new ContentDialog { Title = "リアクション", Content = panel, PrimaryButtonText = "送信", SecondaryButtonText = "削除", CloseButtonText = "キャンセル", IsPrimaryButtonEnabled = false };
+                bool open = true; int version = 0;
+                dialog.Closed += (s, args) => { open = false; version++; };
+                list.SelectionChanged += (s, args) => dialog.IsPrimaryButtonEnabled = list.SelectedItem is MessageReaction;
+                packs.SelectionChanged += async (s, args) =>
                 {
-                    await ViewModel.ReactAsync(message, list.SelectedIndex == 6 ? 0 : list.SelectedIndex + 2);
-                    if (list.SelectedIndex != 6 && string.IsNullOrEmpty(ViewModel.StatusMessage) && ViewModel.IsLatestMessage(message.Id)) { _searchPinned = false; ScrollToLatest(); }
+                    int current = ++version;
+                    var pack = packs.SelectedItem as EmojiReactionPack;
+                    list.SelectedItem = null; list.ItemsSource = null; dialog.IsPrimaryButtonEnabled = false;
+                    if (pack == null || pack.Id == null) { list.ItemsSource = standard; return; }
+                    status.Text = "絵文字を読み込んでいます…";
+                    try
+                    {
+                        var choices = await EmojiReactionCatalog.LoadChoicesAsync(session.AccountId, pack);
+                        if (!open || current != version) return;
+                        list.ItemsSource = choices; status.Text = choices.Count == 0 ? "このパックに絵文字がありません。" : "";
+                    }
+                    catch (Exception ex) { if (open && current == version) status.Text = "絵文字を取得できませんでした: " + ex.Message; }
+                };
+                dialog.Opened += async (s, args) =>
+                {
+                    try
+                    {
+                        foreach (var pack in await EmojiReactionCatalog.LoadCachedAsync(session.AccountId)) { if (!open) return; owned.Add(pack); }
+                        var refreshed = await EmojiReactionCatalog.RefreshOwnedAsync(session);
+                        if (!open) return;
+                        // Replace stale ownership data; don't offer received or expired packs.
+                        packs.SelectedIndex = 0;
+                        while (owned.Count > 1) owned.RemoveAt(owned.Count - 1);
+                        foreach (var pack in refreshed) owned.Add(pack);
+                        status.Text = refreshed.Count == 0 ? "追加の所持絵文字はありません。" : "パックを選ぶと所持絵文字を使用できます。";
+                    }
+                    catch (Exception ex) { if (open) status.Text = "所持絵文字の更新に失敗しました。保存済みの一覧を表示しています。"; System.Diagnostics.Debug.WriteLine("[Reactions] catalog: " + ex.Message); }
+                };
+                var result = await dialog.ShowAsync();
+                if (result == ContentDialogResult.Primary || result == ContentDialogResult.Secondary)
+                {
+                    var selected = result == ContentDialogResult.Primary ? list.SelectedItem as MessageReaction : null;
+                    if (result == ContentDialogResult.Primary && selected == null) return;
+                    await ViewModel.ReactAsync(message, selected);
+                    if (selected != null && string.IsNullOrEmpty(ViewModel.StatusMessage) && ViewModel.IsLatestMessage(message.Id)) { _searchPinned = false; ScrollToLatest(); }
                 }
             }
             catch (Exception ex) { ViewModel.StatusMessage = "リアクションを選択できませんでした: " + ex.Message; }
@@ -583,7 +702,11 @@ namespace LumINE.Views
                 try { await StickerCatalog.RecordSentAsync(session.AccountId, meta); }
                 catch (Exception ex) { System.Diagnostics.Debug.WriteLine("[Stickers] recent save failed: " + ex.Message); }
                 var sent = ChatStore.MapMessage(result, _chatMid);
-                if (sent != null && !string.IsNullOrEmpty(sent.Id)) session.Store.UpsertMessage(_chatMid, sent);
+                if (sent != null && !string.IsNullOrEmpty(sent.Id))
+                {
+                    session.Store.UpsertMessage(_chatMid, sent);
+                    _ = StickerSoundPlayer.PlayAsync(session, sent, false, null, () => _active);
+                }
                 await session.Line.RefreshRecentMessagesAsync(_chatMid, 30);
                 await ViewModel.LoadMessagesAsync();
             }

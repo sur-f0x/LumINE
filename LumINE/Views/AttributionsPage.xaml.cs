@@ -27,6 +27,6 @@ namespace LumINE.Views
             base.OnNavigatedFrom(args);
         }
         private void Back_Click(object sender, RoutedEventArgs args) { if (Frame.CanGoBack) Frame.GoBack(); }
-        private void OnBack(object sender, BackRequestedEventArgs args) { if (Frame.CanGoBack) { args.Handled = true; Frame.GoBack(); } }
+        private void OnBack(object sender, BackRequestedEventArgs args) { if (!args.Handled && Frame != null && Frame.CanGoBack) { args.Handled = true; Frame.GoBack(); } }
     }
 }

@@ -134,6 +134,11 @@ namespace LumINE.Services.Vyline
 
         public async Task ApplyReactionAsync(string chatMid, string messageId, string actor, int type, long atMillis)
         {
+            await ApplyCustomReactionAsync(chatMid, messageId, actor, type == 0 ? null : new MessageReaction { Type = type }, atMillis);
+        }
+
+        public async Task ApplyCustomReactionAsync(string chatMid, string messageId, string actor, MessageReaction reaction, long atMillis)
+        {
             if (string.IsNullOrEmpty(actor) || string.IsNullOrEmpty(messageId)) return;
             await LoadMessagesFromDiskAsync(chatMid);
             Message target;
@@ -145,7 +150,8 @@ namespace LumINE.Services.Vyline
                 var previous = target.Reactions.Find(r => r.FromMid == actor);
                 if (previous != null && previous.AtMillis > atMillis) return;
                 var reactions = target.Reactions.Where(r => r.FromMid != actor).ToList();
-                if (type >= 2 && type <= 7) reactions.Add(new MessageReaction { FromMid = actor, Type = type, AtMillis = atMillis });
+                if (reaction != null && (reaction.IsCustom || (reaction.Type >= 2 && reaction.Type <= 7)))
+                    reactions.Add(new MessageReaction { FromMid = actor, Type = reaction.Type, AtMillis = atMillis, ProductId = reaction.ProductId, EmojiId = reaction.EmojiId, ResourceType = reaction.ResourceType, Version = reaction.Version });
                 target.ReactionsKnown = true;
                 target.Reactions = reactions;
             }

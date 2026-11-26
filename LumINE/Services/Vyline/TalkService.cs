@@ -302,8 +302,13 @@ namespace LumINE.Services.Vyline
 
         public async Task ReactAsync(string messageId, int type)
         {
-            var args = ReactionProtocol.BuildArgs(_getReqseq(), messageId, type);
-            await _request.RequestCoreAsync(RequestPath, args, type == 0 ? "cancelReaction" : "react", null, false, 15000, CancellationToken.None).ConfigureAwait(false);
+            await ReactAsync(messageId, type == 0 ? null : new MessageReaction { Type = type }).ConfigureAwait(false);
+        }
+
+        public async Task ReactAsync(string messageId, MessageReaction reaction)
+        {
+            var args = ReactionProtocol.BuildArgs(_getReqseq(), messageId, reaction);
+            await _request.RequestCoreAsync(RequestPath, args, reaction == null ? "cancelReaction" : "react", null, false, 15000, CancellationToken.None).ConfigureAwait(false);
         }
 
         // ── E2EE key RPCs ─────────────────────────────────────

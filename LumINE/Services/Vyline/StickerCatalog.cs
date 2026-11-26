@@ -94,14 +94,10 @@ namespace LumINE.Services.Vyline
             int offset = 0;
             while (true)
             {
-                var locale = new List<ThriftField> { new ThriftField(ThriftTypes.String, 1, "ja_JP"), new ThriftField(ThriftTypes.String, 2, "JP") };
-                var args = new List<ThriftField>
-                {
-                    new ThriftField(ThriftTypes.String, 2, "stickershop"),
-                    new ThriftField(ThriftTypes.I32, 3, offset), new ThriftField(ThriftTypes.I32, 4, 50),
-                    new ThriftField(ThriftTypes.Struct, 5, locale)
-                };
-                var response = await session.Request.RequestCoreAsync("/TSHOP4", args, "getOwnedProducts", null, false, 15000, CancellationToken.None, true);
+                // Current Desktop shop API uses a compact request with the
+                // empty request struct present, not legacy getOwnedProducts.
+                var args = StickerCatalogProtocol.OwnedArgs(offset);
+                var response = await session.Request.RequestCoreAsync("/TSHOP4", args, "getOwnedProductSummaries", null, false, 15000, CancellationToken.None);
                 var fields = response.Success as Dictionary<int, object>;
                 object raw;
                 if (fields == null || !fields.TryGetValue(1, out raw) || !(raw is List<object>))
@@ -111,22 +107,15 @@ namespace LumINE.Services.Vyline
                 foreach (var item in page)
                 {
                     var product = item as Dictionary<int, object>;
-                    long id;
-                    if (product == null || !long.TryParse(Field(product, 1), out id) || id <= 0 || !seen.Add(id.ToString())) continue;
+                    var pack = StickerCatalogProtocol.ReadPack(product);
+                    if (pack == null || !seen.Add(pack.Id)) continue;
                     added++;
-                    long expiry = 0;
-                    long.TryParse(Field(product, 42), out expiry);
-                    if (expiry > 0 && expiry < 100000000000L) expiry *= 1000;
-                    long version = 0;
-                    long.TryParse(Field(product, 23), out version);
-                    if (version <= 0) long.TryParse(Field(product, 21), out version);
-                    var pack = new StickerPack { Id = id.ToString(), Name = Field(product, 11) ?? id.ToString(), Version = Math.Max(1, version).ToString(), ExpiresAt = expiry };
                     if (!pack.IsExpired) packs.Add(pack);
                 }
                 offset += page.Count;
                 int total = 0;
                 int.TryParse(Field(fields, 3), out total);
-                if (page.Count == 0 || (total > 0 && offset >= total) || (total == 0 && page.Count < 50)) break;
+                if (page.Count == 0 || (total > 0 && offset >= total) || (total == 0 && page.Count < 100)) break;
                 if (added == 0 || offset >= 10000) throw new InvalidOperationException("スタンプ一覧の続きが取得できませんでした。");
             }
             var array = new JsonArray();

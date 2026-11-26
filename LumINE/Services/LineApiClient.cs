@@ -8,7 +8,7 @@ using LumINE.Services.Vyline;
 
 namespace LumINE.Services
 {
-    // Legacy binary authentication only. Talk, sync and refresh use Vyline services.
+    // Binary desktop authentication over HTTPS. Talk, sync and refresh use Vyline services.
     public class LineApiClient
     {
         private readonly HttpClient _httpClient;
@@ -22,7 +22,7 @@ namespace LumINE.Services
         }
         public async Task<Dictionary<int, object>> GetRsaKeyInfoAsync()
         {
-            // Binary authentication over the Legy transport.
+            // Binary authentication over the desktop HTTPS service path.
             var fields = new List<ThriftField>
             {
                 new ThriftField(ThriftTypes.I32, 2, 1) // provider = LINE
@@ -36,7 +36,7 @@ namespace LumINE.Services
             bool keepLoggedIn, string accessLocation, string systemName,
             string certificate, string verifier, string secret, int e2eeVersion, string modelName)
         {
-            // Binary authentication over the Legy transport.
+            // Binary authentication over the desktop HTTPS service path.
             // secret field 10 is Thrift BINARY: decode base64 to raw bytes when present.
             // Optional Thrift fields must be omitted when absent. Sending an
             // empty STRING is not equivalent to an absent field (the server

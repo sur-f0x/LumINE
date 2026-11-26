@@ -59,6 +59,7 @@ namespace LumINE.Views
         private void BackButton_Click(object sender, RoutedEventArgs args) { if (Frame.CanGoBack) Frame.GoBack(); }
         private void OnBackRequested(object sender, BackRequestedEventArgs args)
         {
+            if (args.Handled) return;
             if (Frame.CanGoBack) { args.Handled = true; Frame.GoBack(); }
         }
         private async void DownloadButton_Click(object sender, RoutedEventArgs args)

@@ -1,4 +1,4 @@
-# Building LumINE 1.0
+# Building LumINE 1.1
 
 ## 必要な環境
 

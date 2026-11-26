@@ -21,9 +21,13 @@ namespace LumINE.Services.Vyline
         private Task _sendChain = Task.CompletedTask;
         public Task ReactAsync(string messageId, int type)
         {
+            return ReactAsync(messageId, type == 0 ? null : new MessageReaction { Type = type });
+        }
+        public Task ReactAsync(string messageId, MessageReaction reaction)
+        {
             lock (_sendLock)
             {
-                var next = _sendChain.ContinueWith(_ => _session.Talk.ReactAsync(messageId, type)).Unwrap();
+                var next = _sendChain.ContinueWith(_ => _session.Talk.ReactAsync(messageId, reaction)).Unwrap();
                 _sendChain = next.ContinueWith(t => { var observed = t.Exception; });
                 return next;
             }
@@ -262,12 +266,14 @@ namespace LumINE.Services.Vyline
             try { selfKeys = await E2eeKeyStore.LoadSelfKeysAsync(_session.AccountId).ConfigureAwait(false); }
             catch { return; }
             if (selfKeys == null || selfKeys.Count == 0) return;
+            var batchPeerKeys = new Dictionary<string, E2eePeerKey>(StringComparer.Ordinal);
 
             foreach (var message in messages)
             {
                 if (message == null || message.Chunks == null || message.Chunks.Count < 5 ||
                     (message.ContentMetadata != null && message.ContentMetadata.ContainsKey("messageState")))
                     continue;
+                if ((message.ContentType == 0 && !string.IsNullOrEmpty(message.Text)) || !string.IsNullOrEmpty(message.MediaKeyMaterial)) continue;
 
                 var chatMid = IsGroupMid(message.To) ? message.To : (IsGroupMid(message.From) ? message.From : null);
                 if (chatMid != null)
@@ -286,22 +292,27 @@ namespace LumINE.Services.Vyline
                 var selfKey = selfKeys.Find(k => k.KeyId == selfKeyId);
                 if (selfKey == null) continue;
 
-                E2eePeerKey peerKey = await E2eeKeyStore.LoadPeerKeyAsync(
-                    _session.AccountId, peerMid, peerKeyId).ConfigureAwait(false);
-                if (peerKey == null)
+                E2eePeerKey peerKey;
+                string cacheKey = peerMid + ":" + peerKeyId;
+                if (!batchPeerKeys.TryGetValue(cacheKey, out peerKey))
                 {
-                    try
+                    peerKey = await E2eeKeyStore.LoadPeerKeyAsync(_session.AccountId, peerMid, peerKeyId).ConfigureAwait(false);
+                    if (peerKey == null)
                     {
-                        var raw = await _session.Talk.GetE2eePublicKeyAsync(peerMid, 1, peerKeyId)
-                            .ConfigureAwait(false);
-                        peerKey = E2eeKeyStore.ExtractPeerKey(raw);
-                        if (peerKey != null && peerKey.KeyId == peerKeyId)
-                            await E2eeKeyStore.SavePeerKeyAsync(_session.AccountId, peerMid, peerKey)
+                        try
+                        {
+                            var raw = await _session.Talk.GetE2eePublicKeyAsync(peerMid, 1, peerKeyId)
                                 .ConfigureAwait(false);
-                        else
-                            peerKey = null;
+                            peerKey = E2eeKeyStore.ExtractPeerKey(raw);
+                            if (peerKey != null && peerKey.KeyId == peerKeyId)
+                                await E2eeKeyStore.SavePeerKeyAsync(_session.AccountId, peerMid, peerKey)
+                                    .ConfigureAwait(false);
+                            else
+                                peerKey = null;
+                        }
+                        catch { peerKey = null; }
                     }
-                    catch { peerKey = null; }
+                    batchPeerKeys[cacheKey] = peerKey;
                 }
                 if (peerKey == null || peerKey.PublicKey == null) continue;
 

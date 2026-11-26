@@ -69,6 +69,7 @@ namespace LumINE.Services.Vyline {
         public int Revokes;
         public Task ApplyRemoteRevokeAsync(string chat, string id) { Revokes++; return Task.CompletedTask; }
         public Task ApplyReactionAsync(string chat, string id, string actor, int type, long at) { return Task.CompletedTask; }
+        public Task ApplyCustomReactionAsync(string chat, string id, string actor, LumINE.Models.MessageReaction reaction, long at) { return Task.CompletedTask; }
         public static object MapMessage(Dictionary<int, object> raw, string chat) { return raw; }
     }
     public static class BackgroundNotifications {
@@ -136,10 +137,36 @@ public static class MessageProtocolChecks {
         var box = new Dictionary<int,object>{{1,"upeer"},{10,new List<object>{newer,rawMessage}},{6,new List<object>{"not a message"}}};
         Check(object.ReferenceEquals(LumINE.Services.Vyline.ChatActivityProtocol.LatestMessage(box), newer), "Message-box latest selection depends on array ordering.");
         Check(LumINE.Services.Vyline.ChatActivityProtocol.Compare(1700000000L,"100",1700000000000L,"99") > 0, "Timestamp normalization or numeric ID tie-break failed.");
+        var custom = new LumINE.Models.MessageReaction { ProductId = "670e0cce840a8236ddd4ee4c", EmojiId = "143", ResourceType = 2, Version = 9007199254740993L };
+        var customRequest = (List<LumINE.Utils.ThriftField>)LumINE.Services.Vyline.ReactionProtocol.BuildArgs(11, "123", custom)[0].Value;
+        var union = (List<LumINE.Utils.ThriftField>)customRequest[2].Value;
+        var paid = (List<LumINE.Utils.ThriftField>)union[0].Value;
+        Check(union[0].FieldId == 2 && union[0].Type == 12 && paid[0].FieldId == 1 && paid[1].FieldId == 2 && (int)paid[2].Value == 2 && paid[3].Type == 10 && (long)paid[3].Value == 9007199254740993L, "Owned emoji must use the paid union and preserve I64 version.");
+        var customFields = new Dictionary<int,object>{{2,new Dictionary<int,object>{{1,custom.ProductId},{2,custom.EmojiId},{3,2},{4,custom.Version.Value}}}};
+        var customHistory = LumINE.Services.Vyline.ReactionProtocol.Read(new List<object>{new Dictionary<int,object>{{1,"upeer"},{2,4L},{3,customFields}},new Dictionary<int,object>{{1,"uother"},{2,5L},{3,customFields}}});
+        var customMessage = new LumINE.Models.Message { Text="paid emoji", Reactions=customHistory };
+        Check(customHistory.Count == 2 && customMessage.ReactionBadges.Count == 1 && customMessage.ReactionBadges[0].Count == 2 && customMessage.ReactionBadges[0].EmojiId == "143", "Custom emoji grouping merged different formats or lost counts.");
+        Check(customMessage.ReactionBadges[0].ImageUrl.EndsWith("/670e0cce840a8236ddd4ee4c/android/143.png") && customHistory[0].Version == custom.Version, "Custom emoji display or history metadata was lost.");
+        var customEvent = LumINE.Services.Vyline.ReactionEventDecoder.Parse("140", "{\"chatMid\":\"cgroup\",\"curr\":{\"paidReactionType\":{\"productId\":\"670e0cce840a8236ddd4ee4c\",\"emojiId\":\"143\",\"resourceType\":2,\"version\":\"9007199254740993\"}}}", "upeer", "umyself");
+        Check(customEvent.Type == null && customEvent.CustomReaction != null && customEvent.CustomReaction.Version == custom.Version && customEvent.CustomReaction.Key == custom.Key, "Custom realtime JSON event lost its union or precise version.");
+        var malformedCustom = LumINE.Services.Vyline.ReactionEventDecoder.Parse("140", "{\"chatMid\":\"cgroup\",\"curr\":{\"paidReactionType\":{\"productId\":\"../bad\",\"emojiId\":\"143\"}}}", "upeer", "umyself");
+        Check(malformedCustom.CustomReaction == null && malformedCustom.Type == null, "Malformed custom events must request refresh rather than cancel a reaction.");
+        customMessage.ContentMetadata = new Dictionary<string,string>{{"messageState","revoked"}};
+        Check(customMessage.ReactionBadges.Count == 0, "Revoked messages still display paid reactions.");
+        customHistory.Add(new LumINE.Models.MessageReaction { Type=3,FromMid="uthird" });
+        Check(new LumINE.Models.Message { Text="mixed",Reactions=customHistory }.ReactionBadges.Count == 2, "Custom and predefined reactions must remain separate.");
+        bool customRejected=false;
+        try { LumINE.Services.Vyline.ReactionProtocol.BuildArgs(1,"123",new LumINE.Models.MessageReaction { ProductId="../bad",EmojiId="1" }); } catch(ArgumentException) { customRejected=true; }
+        Check(customRejected,"Invalid emoji IDs may not enter URLs or the send RPC.");
+        LumINE.Utils.ForegroundUi.Resume(LumINE.Utils.ForegroundUi.Generation);
+        var binding=new LumINE.Models.Message { Text="before" };int changes=0;
+        binding.PropertyChanged+=(s,e)=>{if(e.PropertyName=="DisplayText")changes++;};
+        binding.Text="after";binding.Text="after";
+        Check(changes==1&&binding.DisplayText=="after","Batched/no-op refresh must still notify when decryption changes text in place.");
     }
 }
 '@
 $source = 'using System; using System.Collections.Generic; using System.Threading; using System.Threading.Tasks; using System.IO; using System.Text; using LumINE.Models; using LumINE.Utils; using Windows.Data.Json;' + $models + $buffer + $processor + $cursor + $poller + $reaction + $reactionEvents + $activity + $thrift + $fixtures
 Add-Type -TypeDefinition ($source + $foreground) -IgnoreWarnings
 [MessageProtocolChecks]::Run()
-Write-Output 'PASS: 21 checks covering wire operations, reactions, latest-message ordering, notification dispatch, sync cursors and unsent messages.'
+Write-Output 'PASS: 30 checks covering wire operations, custom/predefined reactions, latest-message ordering, notification dispatch, sync cursors and unsent messages.'
